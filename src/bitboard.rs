@@ -66,7 +66,9 @@ impl Bitboard {
 
     #[must_use]
     pub const fn cmpl(self) -> Self {
-        Self { raw: !self.raw }
+        Self {
+            raw: !self.raw & Self::MASK,
+        }
     }
 
     #[must_use]
@@ -102,6 +104,22 @@ impl Bitboard {
         Self {
             raw: (self.raw << count) & Self::MASK,
         }
+    }
+
+    #[must_use]
+    pub const fn lsb(self) -> Option<Square> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Square::from_raw(self.raw.trailing_zeros() as u8).unwrap())
+        }
+    }
+
+    #[must_use]
+    pub fn pop_lsb(&mut self) -> Option<Square> {
+        let sq = self.lsb()?;
+        self.raw &= self.raw - 1;
+        Some(sq)
     }
 }
 
@@ -180,5 +198,26 @@ impl ShrAssign<u32> for Bitboard {
 impl ShlAssign<u32> for Bitboard {
     fn shl_assign(&mut self, rhs: u32) {
         *self = *self << rhs;
+    }
+}
+
+impl IntoIterator for Bitboard {
+    type Item = Square;
+    type IntoIter = Biterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Biterator { board: self }
+    }
+}
+
+pub struct Biterator {
+    board: Bitboard,
+}
+
+impl Iterator for Biterator {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.board.pop_lsb()
     }
 }

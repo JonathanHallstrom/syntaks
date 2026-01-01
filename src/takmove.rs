@@ -1,4 +1,5 @@
 use crate::core::*;
+use std::fmt::{Display, Formatter};
 use std::num::NonZeroU16;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -74,5 +75,34 @@ impl Move {
     pub const fn dir(self) -> Direction {
         assert!(self.is_spread());
         Direction::from_raw(((self.raw.get() >> Self::FLAG_SHIFT) & Self::FLAG_MASK) as u8).unwrap()
+    }
+}
+
+impl Display for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_spread() {
+            let pattern = self.pattern();
+            let taken = 6 - pattern.trailing_zeros();
+
+            if taken == 1 {
+                write!(f, "{}{}", self.sq(), self.dir())?;
+            } else {
+                write!(f, "{}{}{}", taken, self.sq(), self.dir())?;
+
+                let mut pattern = pattern >> (taken + 1);
+                while pattern != 0 {
+                    let dropped = pattern.trailing_zeros();
+                    pattern >>= dropped + 1;
+                    write!(f, "{}", dropped)?;
+                }
+            }
+        } else {
+            match self.pt() {
+                PieceType::Flat => write!(f, "{}", self.sq())?,
+                _ => write!(f, "{}{}", self.pt(), self.sq())?,
+            }
+        }
+
+        Ok(())
     }
 }

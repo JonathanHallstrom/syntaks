@@ -1,4 +1,5 @@
 use crate::bitboard::Bitboard;
+use std::fmt::{Display, Formatter, Write};
 use std::ops::{Index, IndexMut};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -69,6 +70,16 @@ impl PieceType {
     #[must_use]
     pub const fn with_player(self, player: Player) -> Piece {
         Piece::from_raw((self.raw() << 1) | player.raw()).unwrap()
+    }
+}
+
+impl Display for PieceType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PieceType::Flat => f.write_char('F'),
+            PieceType::Wall => f.write_char('S'),
+            PieceType::Capstone => f.write_char('C'),
+        }
     }
 }
 
@@ -157,6 +168,17 @@ impl Direction {
     }
 }
 
+impl Display for Direction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Direction::Up => f.write_char('+'),
+            Direction::Down => f.write_char('-'),
+            Direction::Left => f.write_char('<'),
+            Direction::Right => f.write_char('>'),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
 #[rustfmt::skip]
@@ -227,18 +249,9 @@ impl Square {
     }
 }
 
-impl<T> Index<Square> for [T; Square::COUNT] {
-    type Output = T;
-
-    fn index(&self, index: Square) -> &Self::Output {
-        // SAFETY: all values of Square are necessarily in bounds
-        unsafe { self.get_unchecked(index.idx()) }
-    }
-}
-
-impl<T> IndexMut<Square> for [T; Square::COUNT] {
-    fn index_mut(&mut self, index: Square) -> &mut Self::Output {
-        // SAFETY: all values of Square are necessarily in bounds
-        unsafe { self.get_unchecked_mut(index.idx()) }
+impl Display for Square {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_char((b'a' + self.file() as u8) as char)?;
+        f.write_char((b'1' + self.rank() as u8) as char)
     }
 }

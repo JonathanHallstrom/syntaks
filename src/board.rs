@@ -143,6 +143,10 @@ impl Position {
         &self.stacks
     }
 
+    pub fn occ(&self) -> Bitboard {
+        self.players[0] | self.players[1]
+    }
+
     #[must_use]
     pub fn ply(&self) -> u16 {
         self.ply
