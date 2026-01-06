@@ -57,13 +57,16 @@ impl Stacks {
 
         self.heights[sq.idx()] -= count;
 
-        if self.heights[sq.idx()] == 0 {
+        let new_height = self.heights[sq.idx()];
+        self.players[sq.idx()] &= (1 << new_height) - 1;
+
+        if new_height == 0 {
             self.tops[sq.idx()] = None;
             (players as u8, top, None)
         } else {
             self.tops[sq.idx()] = Some(PieceType::Flat);
             let new_top_player =
-                Player::from_raw(((self.players[sq.idx()] >> self.heights[sq.idx()]) & 0x1) as u8)
+                Player::from_raw(((self.players[sq.idx()] >> (new_height - 1)) & 0x1) as u8)
                     .unwrap();
             (players as u8, top, Some(new_top_player))
         }
@@ -120,6 +123,8 @@ pub struct Position {
 }
 
 impl Position {
+    pub const CARRY_LIMIT: u8 = 6;
+
     #[must_use]
     pub fn startpos() -> Self {
         Self {
@@ -191,6 +196,7 @@ impl Position {
 
             if let Some(new_top_player) = new_top_player {
                 new_player_bbs[new_top_player.idx()].set_sq(mv.sq());
+                new_flats_bb.set_sq(mv.sq());
             } else {
                 new_pos.players[self.stm().idx()].toggle_sq(mv.sq());
             }

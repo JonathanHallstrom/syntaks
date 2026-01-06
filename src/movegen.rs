@@ -76,7 +76,7 @@ fn generate_spreads(dst: &mut Vec<Move>, pos: &Position) {
         let top = pos.stacks().top(sq).unwrap();
         let max = pos.stacks().height(sq).min(6);
 
-        let start_bit = (Move::PATTERN_MASK + 1) >> max;
+        let start_bit = (1 << Position::CARRY_LIMIT) >> max;
 
         for dir in [
             Direction::Up,
@@ -90,14 +90,22 @@ fn generate_spreads(dst: &mut Vec<Move>, pos: &Position) {
                 continue;
             }
 
-            let mut limit = Move::PATTERN_MASK + 1;
+            let mut limit = 1 << Position::CARRY_LIMIT;
 
             match hit_top {
                 Some(PieceType::Wall) => {
                     if top == PieceType::Capstone {
-                        // Smashes
-                        do_spreads(dst, sq, dir, start_bit, Move::PATTERN_MASK, dist, limit);
-                        limit -= 1;
+                        // Can smash - generate spreads here with msb set
+                        do_spreads(
+                            dst,
+                            sq,
+                            dir,
+                            start_bit,
+                            1 << (Position::CARRY_LIMIT - 1),
+                            dist,
+                            limit,
+                        );
+                        limit >>= 1;
                     }
                     dist -= 1;
                 }

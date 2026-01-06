@@ -1,6 +1,5 @@
 use crate::board::Position;
-use crate::core::{PieceType, Square};
-use crate::movegen::generate_moves;
+use crate::core::{Direction, PieceType, Square};
 use crate::perft::split_perft;
 use crate::takmove::Move;
 
@@ -12,22 +11,29 @@ mod perft;
 mod takmove;
 
 fn main() {
-    let pos = Position::startpos()
-        .apply_move(Move::placement(PieceType::Flat, Square::A1))
-        .apply_move(Move::placement(PieceType::Flat, Square::B1))
-        .apply_move(Move::placement(PieceType::Capstone, Square::F6))
-        .apply_move(Move::placement(PieceType::Wall, Square::F1));
-    let mut moves = Vec::new();
-    generate_moves(&mut moves, &pos);
-    //split_perft(&pos, 1);
+    let pos = Position::startpos();
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::placement(PieceType::Flat, Square::A1));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::placement(PieceType::Flat, Square::B1));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::spread(Square::B1, Direction::Left, 0b100000));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::placement(PieceType::Flat, Square::A2));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::spread(Square::A1, Direction::Right, 0b100000));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::spread(Square::A1, Direction::Up, 0b100000));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::placement(PieceType::Capstone, Square::A1));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::placement(PieceType::Capstone, Square::C1));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::spread(Square::A1, Direction::Up, 0b100000));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+    let pos = pos.apply_move(Move::placement(PieceType::Flat, Square::A1));
+    assert_eq!(pos, pos.tps().parse::<Position>().unwrap());
+
+    split_perft(&pos, 3);
     println!("{}", pos.tps());
-    println!(
-        "{}",
-        moves
-            .iter()
-            .filter(|mv| mv.is_spread())
-            .map(|mv| mv.to_string())
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
 }

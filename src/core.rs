@@ -1,6 +1,5 @@
 use crate::bitboard::Bitboard;
 use std::fmt::{Display, Formatter, Write};
-use std::ops::{Index, IndexMut};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
