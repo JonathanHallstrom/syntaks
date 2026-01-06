@@ -43,7 +43,7 @@ pub fn split_perft(pos: &Position, depth: i32) {
     let mut total = 0;
 
     for &mut mv in moves {
-        print!("{}\t", mv);
+        print!("{:9}  ", mv.to_string());
 
         let pos = pos.apply_move(mv);
         let value = do_perft(&pos, depth - 1, movelists);

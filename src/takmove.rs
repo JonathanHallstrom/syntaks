@@ -1,3 +1,4 @@
+use crate::board::Position;
 use crate::core::*;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroU16;
@@ -97,19 +98,19 @@ impl Display for Move {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.is_spread() {
             let pattern = self.pattern();
-            let taken = 6 - pattern.trailing_zeros();
+
+            let dropped = pattern.trailing_zeros();
+            let taken = 6 - dropped;
 
             if taken == 1 {
                 write!(f, "{}{}", self.sq(), self.dir())?;
             } else {
                 write!(f, "{}{}{}", taken, self.sq(), self.dir())?;
-
                 if pattern.count_ones() > 1 {
-                    let mut pattern = pattern >> (taken + 1);
+                    let mut pattern = ((pattern | (1 << Position::CARRY_LIMIT)) >> dropped) & !1;
                     while pattern != 0 {
                         let dropped = pattern.trailing_zeros();
-                        pattern >>= dropped + 1;
-
+                        pattern = (pattern >> dropped) & !1;
                         write!(f, "{}", dropped)?;
                     }
                 }
