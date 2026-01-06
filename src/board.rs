@@ -143,8 +143,24 @@ impl Position {
         &self.stacks
     }
 
+    #[must_use]
+    pub fn player_bb(&self, player: Player) -> Bitboard {
+        self.players[player.idx()]
+    }
+
+    #[must_use]
     pub fn occ(&self) -> Bitboard {
         self.players[0] | self.players[1]
+    }
+
+    #[must_use]
+    pub fn flats_in_hand(&self, player: Player) -> u8 {
+        self.flats_in_hand[player.idx()]
+    }
+
+    #[must_use]
+    pub fn caps_in_hand(&self, player: Player) -> u8 {
+        self.caps_in_hand[player.idx()]
     }
 
     #[must_use]
@@ -179,8 +195,8 @@ impl Position {
                 new_pos.players[self.stm().idx()].toggle_sq(mv.sq());
             }
 
-            if top != PieceType::Flat {
-                new_pos.pieces[top.idx()].clear_sq(mv.sq());
+            if top != PieceType::Flat || new_top_player.is_none() {
+                new_pos.pieces[top.idx()].toggle_sq(mv.sq());
             }
 
             let mut sq = mv.sq().shift(dir).unwrap();
@@ -266,6 +282,13 @@ impl Position {
 
         new_pos.stm = new_pos.stm.flip();
         new_pos.ply += 1;
+
+        #[cfg(debug_assertions)]
+        {
+            let mut other_new = new_pos;
+            other_new.regen();
+            assert_eq!(new_pos, other_new);
+        }
 
         new_pos
     }

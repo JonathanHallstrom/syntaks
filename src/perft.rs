@@ -43,11 +43,13 @@ pub fn split_perft(pos: &Position, depth: i32) {
     let mut total = 0;
 
     for &mut mv in moves {
+        print!("{}\t", mv);
+
         let pos = pos.apply_move(mv);
         let value = do_perft(&pos, depth - 1, movelists);
 
         total += value;
-        println!("{}\t{}", mv, value);
+        println!("{}", value);
     }
 
     let nps = (total as f64 / start.elapsed().as_secs_f64()) as usize;

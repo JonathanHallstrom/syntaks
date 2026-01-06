@@ -247,6 +247,24 @@ impl Square {
             None
         }
     }
+
+    #[must_use]
+    pub const fn shift_checked(self, dir: Direction) -> Option<Self> {
+        match dir {
+            Direction::Left => {
+                if self.file() == 0 {
+                    return None;
+                }
+            }
+            Direction::Right => {
+                if self.file() == 5 {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+        self.shift(dir)
+    }
 }
 
 impl Display for Square {

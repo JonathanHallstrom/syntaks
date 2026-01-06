@@ -16,9 +16,9 @@ impl Move {
     const PATTERN_SHIFT: usize = Self::SQUARE_SHIFT + Self::SQUARE_BITS;
     const FLAG_SHIFT: usize = Self::PATTERN_SHIFT + Self::PATTERN_BITS;
 
-    const SQUARE_MASK: u16 = (1 << Self::SQUARE_BITS) - 1;
-    const PATTERN_MASK: u16 = (1 << Self::PATTERN_BITS) - 1;
-    const FLAG_MASK: u16 = (1 << Self::FLAG_BITS) - 1;
+    pub const SQUARE_MASK: u16 = (1 << Self::SQUARE_BITS) - 1;
+    pub const PATTERN_MASK: u16 = (1 << Self::PATTERN_BITS) - 1;
+    pub const FLAG_MASK: u16 = (1 << Self::FLAG_BITS) - 1;
 
     #[must_use]
     pub const fn placement(pt: PieceType, dst: Square) -> Self {
@@ -46,6 +46,21 @@ impl Move {
         Self {
             raw: NonZeroU16::new(raw).unwrap(),
         }
+    }
+
+    #[must_use]
+    pub const fn from_raw(raw: u16) -> Option<Move> {
+        if raw == 0 {
+            None
+        } else {
+            Some(Self {
+                raw: NonZeroU16::new(raw).unwrap(),
+            })
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.raw.get()
     }
 
     #[must_use]
@@ -89,11 +104,14 @@ impl Display for Move {
             } else {
                 write!(f, "{}{}{}", taken, self.sq(), self.dir())?;
 
-                let mut pattern = pattern >> (taken + 1);
-                while pattern != 0 {
-                    let dropped = pattern.trailing_zeros();
-                    pattern >>= dropped + 1;
-                    write!(f, "{}", dropped)?;
+                if pattern.count_ones() > 1 {
+                    let mut pattern = pattern >> (taken + 1);
+                    while pattern != 0 {
+                        let dropped = pattern.trailing_zeros();
+                        pattern >>= dropped + 1;
+
+                        write!(f, "{}", dropped)?;
+                    }
                 }
             }
         } else {
