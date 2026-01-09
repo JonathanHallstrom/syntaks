@@ -1,6 +1,7 @@
 mod bitboard;
 mod board;
 mod core;
+mod keys;
 mod movegen;
 mod perft;
 mod road;

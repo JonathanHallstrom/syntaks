@@ -1,5 +1,6 @@
 use crate::board::Position;
 use crate::movegen::generate_moves;
+use crate::perft::{perft, split_perft};
 
 const NAME: &str = "syntaks";
 const AUTHORS: &str = "Ciekce";
@@ -40,6 +41,8 @@ impl TeiHandler {
                 "position" => self.handle_position(args),
                 "go" => self.handle_go(args),
                 "d" => self.handle_d(),
+                "perft" => self.handle_perft(args),
+                "splitperft" => self.handle_splitperft(args),
                 "quit" => break,
                 unknown => eprintln!("Unknown command '{}'", unknown),
             }
@@ -57,7 +60,7 @@ impl TeiHandler {
 
     fn handle_teinewgame(&mut self, args: &[&str]) {
         if args.is_empty() {
-            println!("Missing size, assuming 6x6");
+            println!("info string Missing size, assuming 6x6");
         } else {
             match args[0].parse::<u32>() {
                 Ok(size) => {
@@ -146,6 +149,39 @@ impl TeiHandler {
 
     fn handle_d(&self) {
         println!("TPS: {}", self.pos.tps());
+        println!("Key: {:016x}", self.pos.key());
+    }
+
+    fn handle_perft(&self, args: &[&str]) {
+        if args.is_empty() {
+            eprintln!("Missing depth");
+        }
+
+        let depth = match args[0].parse() {
+            Ok(depth) => depth,
+            Err(_) => {
+                eprintln!("Invalid depth '{}'", args[0]);
+                return;
+            }
+        };
+
+        println!("{}", perft(&self.pos, depth));
+    }
+
+    fn handle_splitperft(&self, args: &[&str]) {
+        if args.is_empty() {
+            eprintln!("Missing depth");
+        }
+
+        let depth = match args[0].parse() {
+            Ok(depth) => depth,
+            Err(_) => {
+                eprintln!("Invalid depth '{}'", args[0]);
+                return;
+            }
+        };
+
+        split_perft(&self.pos, depth);
     }
 }
 

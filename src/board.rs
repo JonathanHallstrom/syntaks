@@ -1,5 +1,6 @@
 use crate::bitboard::Bitboard;
 use crate::core::*;
+use crate::keys;
 use crate::road::has_road;
 use crate::takmove::Move;
 use std::str::FromStr;
@@ -9,17 +10,24 @@ pub struct Stacks {
     players: [u64; Square::COUNT],
     heights: [u8; Square::COUNT],
     tops: [Option<PieceType>; Square::COUNT],
+    key: u64,
 }
 
 impl Stacks {
+    // all flats + cap
+    pub const MAX_HEIGHT: usize = 30 + 30 + 1;
+
+    #[must_use]
     pub fn is_empty(&self, sq: Square) -> bool {
         self.tops[sq.idx()].is_none()
     }
 
+    #[must_use]
     pub fn top(&self, sq: Square) -> Option<PieceType> {
         self.tops[sq.idx()]
     }
 
+    #[must_use]
     pub fn top_player(&self, sq: Square) -> Option<Player> {
         if self.tops[sq.idx()].is_none() {
             None
@@ -31,16 +39,32 @@ impl Stacks {
         }
     }
 
+    #[must_use]
     pub fn height(&self, sq: Square) -> u8 {
         self.heights[sq.idx()]
     }
 
+    #[must_use]
     pub fn players(&self, sq: Square) -> u64 {
         self.players[sq.idx()]
     }
 
+    #[must_use]
+    fn key(&self) -> u64 {
+        self.key
+    }
+
     fn push(&mut self, sq: Square, pt: PieceType, player: Player) {
         debug_assert_ne!(self.tops[sq.idx()], Some(PieceType::Capstone));
+
+        if let Some(prev_top) = self.tops[sq.idx()] {
+            self.key ^= keys::top_key(prev_top, sq);
+        }
+
+        self.key ^= keys::top_key(pt, sq);
+
+        let height = self.heights[sq.idx()];
+        self.key ^= keys::player_key(height, player, sq);
 
         self.players[sq.idx()] |= (player.raw() as u64) << self.heights[sq.idx()];
         self.heights[sq.idx()] += 1;
@@ -56,20 +80,47 @@ impl Stacks {
             (self.players[sq.idx()] >> (self.heights[sq.idx()] - count)) & ((1 << count) - 1);
         let top = self.tops[sq.idx()].unwrap();
 
-        self.heights[sq.idx()] -= count;
+        self.key ^= keys::top_key(top, sq);
 
+        let old_height = self.heights[sq.idx()];
+        self.heights[sq.idx()] -= count;
         let new_height = self.heights[sq.idx()];
+
+        for height in new_height..old_height {
+            let player =
+                Player::from_raw(((self.players[sq.idx()] >> height) & 0x1) as u8).unwrap();
+            self.key ^= keys::player_key(height, player, sq);
+        }
+
         self.players[sq.idx()] &= (1 << new_height) - 1;
 
         if new_height == 0 {
             self.tops[sq.idx()] = None;
             (players as u8, top, None)
         } else {
+            self.key ^= keys::top_key(PieceType::Flat, sq);
             self.tops[sq.idx()] = Some(PieceType::Flat);
             let new_top_player =
                 Player::from_raw(((self.players[sq.idx()] >> (new_height - 1)) & 0x1) as u8)
                     .unwrap();
             (players as u8, top, Some(new_top_player))
+        }
+    }
+
+    fn regen_key(&mut self, occ: Bitboard) {
+        self.key = 0;
+
+        for sq in occ {
+            let players = self.players(sq);
+            let height = self.height(sq);
+            let top = self.top(sq).unwrap();
+
+            self.key ^= keys::top_key(top, sq);
+
+            for i in 0..height {
+                let player = Player::from_raw(((players >> i) & 0x1) as u8).unwrap();
+                self.key ^= keys::player_key(i, player, sq);
+            }
         }
     }
 
@@ -88,6 +139,7 @@ impl Default for Stacks {
             players: [u64::default(); Square::COUNT],
             heights: [u8::default(); Square::COUNT],
             tops: [None; Square::COUNT],
+            key: 0,
         }
     }
 }
@@ -121,6 +173,7 @@ pub struct Position {
     caps_in_hand: [u8; Player::COUNT],
     stm: Player,
     ply: u16,
+    player_key: u64,
 }
 
 impl Position {
@@ -136,6 +189,7 @@ impl Position {
             caps_in_hand: [1; Player::COUNT],
             stm: Player::P1,
             ply: 0,
+            player_key: 0,
         }
     }
 
@@ -276,6 +330,11 @@ impl Position {
     }
 
     #[must_use]
+    pub fn key(&self) -> u64 {
+        self.player_key ^ self.stacks().key()
+    }
+
+    #[must_use]
     pub fn has_road(&self, player: Player) -> bool {
         let roads = (self.piece_bb(PieceType::Flat) | self.piece_bb(PieceType::Capstone))
             & self.player_bb(player);
@@ -398,6 +457,8 @@ impl Position {
         new_pos.stm = new_pos.stm.flip();
         new_pos.ply += 1;
 
+        new_pos.player_key ^= keys::p2_key();
+
         #[cfg(debug_assertions)]
         {
             let mut other_new = new_pos;
@@ -506,6 +567,14 @@ impl Position {
 
             self.flats_in_hand[0] -= (!players & covered).count_ones() as u8;
             self.flats_in_hand[1] -= (players & covered).count_ones() as u8;
+        }
+
+        self.stacks.regen_key(self.occ());
+
+        if self.stm() == Player::P2 {
+            self.player_key = keys::p2_key();
+        } else {
+            self.player_key = 0;
         }
     }
 }
