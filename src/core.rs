@@ -265,6 +265,11 @@ impl Square {
         }
         self.shift(dir)
     }
+
+    #[must_use]
+    pub fn all() -> SquareIterator {
+        SquareIterator { raw: 0 }
+    }
 }
 
 impl Display for Square {
@@ -307,5 +312,19 @@ impl FromStr for Square {
         }
 
         Ok(Self::from_file_rank((file - b'a') as u32, (rank - b'1') as u32).unwrap())
+    }
+}
+
+pub struct SquareIterator {
+    raw: u8,
+}
+
+impl Iterator for SquareIterator {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sq = Square::from_raw(self.raw);
+        self.raw += 1;
+        sq
     }
 }

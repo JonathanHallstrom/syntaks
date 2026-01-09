@@ -1,5 +1,6 @@
 use crate::board::Position;
 use crate::core::{Direction, PieceType, Square};
+use crate::hits::find_hits;
 use crate::takmove::Move;
 
 fn generate_starting_moves(dst: &mut Vec<Move>, pos: &Position) {
@@ -26,29 +27,6 @@ fn generate_placements(dst: &mut Vec<Move>, pos: &Position) {
             dst.push(Move::placement(PieceType::Wall, sq));
         }
     }
-}
-
-#[must_use]
-fn find_hit(pos: &Position, start: Square, dir: Direction) -> (u32, Option<PieceType>) {
-    //TODO non-toy impl
-
-    let mut sq = start;
-    let mut dist = 0;
-    let mut top = None;
-
-    while let Some(next) = sq.shift_checked(dir) {
-        sq = next;
-        top = pos.stacks().top(sq);
-        dist += 1;
-
-        if let Some(top_pt) = top
-            && matches!(top_pt, PieceType::Capstone | PieceType::Wall)
-        {
-            break;
-        }
-    }
-
-    (dist, top)
 }
 
 fn do_spreads(
@@ -78,13 +56,15 @@ fn generate_spreads(dst: &mut Vec<Move>, pos: &Position) {
 
         let start_bit = (1 << Position::CARRY_LIMIT) >> max;
 
+        let hits = find_hits(pos.all_blockers(), sq);
+
         for dir in [
             Direction::Up,
             Direction::Down,
             Direction::Left,
             Direction::Right,
         ] {
-            let (mut dist, hit_top) = find_hit(pos, sq, dir);
+            let (mut dist, hit_sq) = hits[dir.idx()];
 
             if dist == 0 {
                 continue;
@@ -92,7 +72,7 @@ fn generate_spreads(dst: &mut Vec<Move>, pos: &Position) {
 
             let mut limit = 1 << Position::CARRY_LIMIT;
 
-            match hit_top {
+            match pos.stacks().top(hit_sq) {
                 Some(PieceType::Wall) => {
                     if top == PieceType::Capstone {
                         // Can smash - generate spreads here with msb set
@@ -102,7 +82,7 @@ fn generate_spreads(dst: &mut Vec<Move>, pos: &Position) {
                             dir,
                             start_bit,
                             1 << (Position::CARRY_LIMIT - 1),
-                            dist,
+                            dist as u32,
                             limit,
                         );
                         limit >>= 1;
@@ -119,7 +99,7 @@ fn generate_spreads(dst: &mut Vec<Move>, pos: &Position) {
                 continue;
             }
 
-            do_spreads(dst, sq, dir, start_bit, start_bit, dist, limit);
+            do_spreads(dst, sq, dir, start_bit, start_bit, dist as u32, limit);
         }
     }
 }

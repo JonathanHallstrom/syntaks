@@ -142,6 +142,11 @@ impl Bitboard {
     }
 
     #[must_use]
+    pub const fn popcount(self) -> u32 {
+        self.raw.count_ones()
+    }
+
+    #[must_use]
     pub fn shift(&self, dir: Direction) -> Self {
         match dir {
             Direction::Up | Direction::Right => self.shl(dir.offset() as u32),

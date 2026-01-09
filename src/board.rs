@@ -335,10 +335,28 @@ impl Position {
     }
 
     #[must_use]
+    pub fn all_blockers(&self) -> Bitboard {
+        self.piece_bb(PieceType::Wall) | self.piece_bb(PieceType::Capstone)
+    }
+
+    #[must_use]
+    pub fn blockers(&self, player: Player) -> Bitboard {
+        self.all_blockers() & self.player_bb(player)
+    }
+
+    #[must_use]
+    pub fn all_roads(&self) -> Bitboard {
+        self.piece_bb(PieceType::Flat) | self.piece_bb(PieceType::Capstone)
+    }
+
+    #[must_use]
+    pub fn roads(&self, player: Player) -> Bitboard {
+        self.all_roads() & self.player_bb(player)
+    }
+
+    #[must_use]
     pub fn has_road(&self, player: Player) -> bool {
-        let roads = (self.piece_bb(PieceType::Flat) | self.piece_bb(PieceType::Capstone))
-            & self.player_bb(player);
-        has_road(roads)
+        has_road(self.roads(player))
     }
 
     #[must_use]

@@ -1,6 +1,7 @@
 mod bitboard;
 mod board;
 mod core;
+mod hits;
 mod keys;
 mod movegen;
 mod perft;
