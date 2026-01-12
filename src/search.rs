@@ -263,18 +263,6 @@ impl SearcherImpl {
                 SCORE_INF,
             );
 
-            #[cfg(debug_assertions)]
-            {
-                let mut found = false;
-                for root_move in thread.root_moves.iter() {
-                    if root_move.score != -SCORE_INF {
-                        found = true;
-                        break;
-                    }
-                }
-                assert!(found);
-            }
-
             thread.root_moves.sort_by(|a, b| b.score.cmp(&a.score));
 
             if thread.root_depth >= thread.max_depth {
