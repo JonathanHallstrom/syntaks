@@ -22,7 +22,9 @@
  */
 
 use crate::board::Position;
+use crate::history::{self, History};
 use crate::movegen::generate_moves;
+use crate::search::Score;
 use crate::takmove::Move;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -48,23 +50,56 @@ impl Stage {
 pub struct Movepicker<'a> {
     pos: &'a Position,
     moves: &'a mut Vec<Move>,
+    scores: &'a mut Vec<i32>,
     idx: usize,
     tt_move: Option<Move>,
     stage: Stage,
 }
 
 impl<'a> Movepicker<'a> {
-    pub fn new(pos: &'a Position, moves: &'a mut Vec<Move>, tt_move: Option<Move>) -> Self {
+    pub fn new(
+        pos: &'a Position,
+        moves: &'a mut Vec<Move>,
+        scores: &'a mut Vec<Score>,
+        tt_move: Option<Move>,
+    ) -> Self {
         Self {
             pos,
             moves,
+            scores,
             idx: 0,
             tt_move,
             stage: Stage::TtMove,
         }
     }
 
-    pub fn next(&mut self) -> Option<Move> {
+    fn score_moves(&mut self, history: &History) {
+        self.scores.clear();
+        for mv in self.moves.iter() {
+            self.scores.push(history.read(self.pos, *mv));
+        }
+    }
+
+    fn pick_best(&mut self) -> Move {
+        let mut best_score = self.scores[self.idx];
+        let mut best_idx = self.idx;
+
+        let mut i = self.idx + 1;
+        while i < self.moves.len() {
+            if self.scores[i] > best_score {
+                best_score = self.scores[i];
+                best_idx = i;
+            }
+            i += 1;
+        }
+
+        self.scores.swap(self.idx, best_idx);
+        self.moves.swap(self.idx, best_idx);
+
+        self.moves[self.idx]
+    }
+
+    pub fn next(&mut self, history: &History) -> Option<Move> {
         while self.stage != Stage::End {
             match self.stage {
                 Stage::TtMove => {
@@ -75,10 +110,13 @@ impl<'a> Movepicker<'a> {
                         return Some(tt_move);
                     }
                 }
-                Stage::GenMoves => generate_moves(self.moves, self.pos),
+                Stage::GenMoves => {
+                    generate_moves(self.moves, self.pos);
+                    self.score_moves(history);
+                }
                 Stage::Moves => {
                     while self.idx < self.moves.len() {
-                        let mv = self.moves[self.idx];
+                        let mv = self.pick_best();
                         self.idx += 1;
                         if self.tt_move.is_none_or(|tt_move| mv != tt_move) {
                             return Some(mv);

@@ -26,6 +26,7 @@ mod board;
 mod core;
 mod correction;
 mod eval;
+mod history;
 mod hits;
 mod keys;
 mod limit;

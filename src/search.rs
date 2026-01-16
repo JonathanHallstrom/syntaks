@@ -24,6 +24,7 @@
 use crate::board::{FlatCountOutcome, Position};
 use crate::correction::CorrectionHistory;
 use crate::eval::static_eval;
+use crate::history::History;
 use crate::limit::Limits;
 use crate::movegen::generate_moves;
 use crate::movepick::Movepicker;
@@ -111,6 +112,7 @@ struct ThreadData {
     nodes: usize,
     root_moves: Vec<RootMove>,
     corrhist: CorrectionHistory,
+    history: History,
 }
 
 impl ThreadData {
@@ -124,6 +126,7 @@ impl ThreadData {
             nodes: 0,
             root_moves: Vec::with_capacity(1024),
             corrhist: CorrectionHistory::new(),
+            history: History::new(),
         }
     }
 
@@ -393,6 +396,8 @@ impl SearcherImpl {
         let correction = thread.corrhist.correction(pos);
         let static_eval = raw_eval + correction;
 
+        debug_assert!(static_eval.abs() < SCORE_MAX_MATE);
+
         // reverse futility pruning (rfp)
         if !NT::PV_NODE {
             let rfp_margin = 100 * depth + 100;
@@ -409,10 +414,12 @@ impl SearcherImpl {
 
         let mut tt_flag = TtFlag::UpperBound;
 
-        let mut movepicker = Movepicker::new(pos, moves, tt_entry.mv);
+        let mut scores = Vec::new();
+        let mut movepicker = Movepicker::new(pos, moves, &mut scores, tt_entry.mv);
         let mut move_count = 0;
+        let mut faillow_moves = arrayvec::ArrayVec::<Move, 32>::new();
 
-        while let Some(mv) = movepicker.next() {
+        while let Some(mv) = movepicker.next(&thread.history) {
             debug_assert!(pos.is_legal(mv));
 
             move_count += 1;
@@ -548,10 +555,22 @@ impl SearcherImpl {
 
                 tt_flag = TtFlag::Exact;
             }
-
             if score >= beta {
                 tt_flag = TtFlag::LowerBound;
                 break;
+            }
+            if !faillow_moves.is_full() {
+                faillow_moves.push(mv);
+            }
+        }
+
+        if tt_flag == TtFlag::LowerBound {
+            if let Some(best_move) = best_move {
+                let bonus = 10 * depth;
+                thread.history.update(pos, best_move, bonus);
+                for &mv in &faillow_moves {
+                    thread.history.update(pos, mv, -depth);
+                }
             }
         }
 
@@ -650,6 +669,7 @@ impl Searcher {
     pub fn reset(&mut self) {
         self.searcher.reset();
         self.data.corrhist.clear();
+        self.data.history.clear();
     }
 
     pub fn set_tt_size(&mut self, size_mib: usize) {

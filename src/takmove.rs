@@ -36,6 +36,7 @@ impl Move {
     const SQUARE_BITS: usize = 6;
     const PATTERN_BITS: usize = 6;
     const FLAG_BITS: usize = 2;
+    pub const TOTAL_BITS: usize = Self::SQUARE_BITS + Self::PATTERN_BITS + Self::FLAG_BITS;
 
     const SQUARE_SHIFT: usize = 0;
     const PATTERN_SHIFT: usize = Self::SQUARE_SHIFT + Self::SQUARE_BITS;
