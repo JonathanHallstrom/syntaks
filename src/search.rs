@@ -393,8 +393,10 @@ impl SearcherImpl {
         let correction = thread.corrhist.correction(pos);
         let static_eval = raw_eval + correction;
 
+        // reverse futility pruning (rfp)
         if !NT::PV_NODE {
-            if depth <= 6 && static_eval - 100 * depth >= beta {
+            let rfp_margin = 100 * depth + 100;
+            if depth <= 6 && static_eval - rfp_margin >= beta {
                 return static_eval;
             }
         }
