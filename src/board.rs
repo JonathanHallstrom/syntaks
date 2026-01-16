@@ -35,6 +35,7 @@ struct Keys {
     stacks: u64,
     blockers: u64,
     roads: u64,
+    tops: u64,
 }
 
 impl Keys {
@@ -44,6 +45,7 @@ impl Keys {
 
     fn toggle_top_key(&mut self, pt: PieceType, sq: Square) {
         self.stacks ^= keys::top_key(pt, sq);
+        self.tops ^= keys::top_key(pt, sq);
         if pt.is_blocker() {
             self.blockers ^= keys::top_key(pt, sq);
         }
@@ -401,6 +403,11 @@ impl Position {
     #[must_use]
     pub fn road_key(&self) -> u64 {
         self.stacks.keys.roads
+    }
+
+    #[must_use]
+    pub fn top_key(&self) -> u64 {
+        self.stacks.keys.tops
     }
 
     #[must_use]

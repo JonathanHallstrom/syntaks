@@ -82,6 +82,7 @@ impl IndexMut<u64> for HashedTable {
 struct SidedTables {
     blocker: HashedTable,
     road: HashedTable,
+    tops: HashedTable,
 }
 
 pub struct CorrectionHistory {
@@ -109,6 +110,7 @@ impl CorrectionHistory {
 
         tables.blocker[pos.blocker_key()].update(bonus);
         tables.road[pos.road_key()].update(bonus);
+        tables.tops[pos.top_key()].update(bonus);
     }
 
     pub fn correction(&self, pos: &Position) -> i32 {
@@ -118,6 +120,7 @@ impl CorrectionHistory {
 
         correction += tables.blocker[pos.blocker_key()].get();
         correction += tables.road[pos.road_key()].get();
+        correction += tables.tops[pos.top_key()].get();
 
         correction / 16
     }
