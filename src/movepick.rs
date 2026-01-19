@@ -22,6 +22,7 @@
  */
 
 use crate::board::Position;
+use crate::core::PieceType;
 use crate::history::History;
 use crate::movegen::generate_moves;
 use crate::search::Score;
@@ -114,6 +115,9 @@ impl<'a> Movepicker<'a> {
             let mut score = history.score(self.pos, *mv, self.prev_move);
 
             if !mv.is_spread() {
+                if mv.pt() == PieceType::Flat {
+                    score += 1000;
+                }
                 score += 100;
             }
 
