@@ -22,7 +22,7 @@
  */
 
 use crate::board::Position;
-use crate::history::History;
+use crate::history::{ConthistMoves, History};
 use crate::movegen::generate_moves;
 use crate::search::Score;
 use crate::takmove::Move;
@@ -83,7 +83,7 @@ pub struct Movepicker<'a> {
     idx: usize,
     tt_move: Option<Move>,
     killers: KillerTable,
-    prev_move: Option<Move>,
+    prev_moves: ConthistMoves,
     stage: Stage,
 }
 
@@ -94,7 +94,7 @@ impl<'a> Movepicker<'a> {
         scores: &'a mut Vec<Score>,
         tt_move: Option<Move>,
         killers: KillerTable,
-        prev_move: Option<Move>,
+        prev_moves: ConthistMoves,
     ) -> Self {
         Self {
             pos,
@@ -103,7 +103,7 @@ impl<'a> Movepicker<'a> {
             idx: 0,
             tt_move,
             killers,
-            prev_move,
+            prev_moves,
             stage: Stage::TtMove,
         }
     }
@@ -112,7 +112,7 @@ impl<'a> Movepicker<'a> {
         self.scores.clear();
         for mv in self.moves.iter() {
             self.scores
-                .push(history.score(self.pos, *mv, self.prev_move));
+                .push(history.score(self.pos, *mv, &self.prev_moves));
         }
     }
 

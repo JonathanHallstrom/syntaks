@@ -21,6 +21,8 @@
  * SOFTWARE.
  */
 
+use arrayvec::ArrayVec;
+
 use crate::core::{Player, Square};
 use crate::takmove::Move;
 use crate::{board::Position, core::PieceType};
@@ -141,10 +143,14 @@ impl IndexMut<Move> for CountermoveHistory {
     }
 }
 
+pub const NUM_CONTHISTS: usize = 2;
+pub const CONTHIST_OFFSETS: [usize; NUM_CONTHISTS] = [1, 2];
+pub type ConthistMoves = ArrayVec<Move, NUM_CONTHISTS>;
+
 #[derive(Copy, Clone, Default)]
 struct SidedTables {
     hist: CombinedHist,
-    conthist: CountermoveHistory,
+    conthist: [CountermoveHistory; Player::COUNT],
 }
 
 pub struct History {
@@ -164,21 +170,21 @@ impl History {
         self.tables = Default::default();
     }
 
-    pub fn update(&mut self, pos: &Position, mv: Move, prev: Option<Move>, bonus: i32) {
+    pub fn update(&mut self, pos: &Position, mv: Move, prev: &ConthistMoves, bonus: i32) {
         let tables = &mut self.tables[pos.stm().idx()];
         let bonus = bonus.clamp(-Self::MAX_BONUS, Self::MAX_BONUS);
         tables.hist[mv].update(bonus);
-        if let Some(prev) = prev {
-            tables.conthist[prev][mv].update(bonus);
+        for (&prev_move, &offs) in prev.iter().zip(CONTHIST_OFFSETS.iter()) {
+            tables.conthist[offs % Player::COUNT][prev_move][mv].update(bonus);
         }
     }
 
     #[must_use]
-    pub fn score(&self, pos: &Position, mv: Move, prev: Option<Move>) -> i32 {
+    pub fn score(&self, pos: &Position, mv: Move, prev: &ConthistMoves) -> i32 {
         let tables = &self.tables[pos.stm().idx()];
         let mut res = tables.hist[mv].get();
-        if let Some(prev) = prev {
-            res += tables.conthist[prev][mv].get();
+        for (&prev_move, &offs) in prev.iter().zip(CONTHIST_OFFSETS.iter()) {
+            res += tables.conthist[offs % Player::COUNT][prev_move][mv].get();
         }
         return res;
     }
