@@ -148,10 +148,76 @@ impl IndexMut<Move> for ConthistTable {
     }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
+struct SpreadHist {
+    entries: [[[[Entry; Self::PT_ENTRIES]; Direction::COUNT]; Self::SPREAD_LENGTHS]; Square::COUNT],
+}
+
+impl SpreadHist {
+    const PT_ENTRIES: usize = 3_usize.pow(4) * 5;
+    const SPREAD_LENGTHS: usize = 5;
+
+    fn entry(&self, pos: &Position, mv: Move) -> &Entry {
+        &self.entries[mv.sq().idx()][mv.spread_length() as usize - 1][mv.dir().idx()]
+            [SpreadHist::piece_type_idx(pos, mv)]
+    }
+
+    fn entry_mut(&mut self, pos: &Position, mv: Move) -> &mut Entry {
+        &mut self.entries[mv.sq().idx()][mv.spread_length() as usize - 1][mv.dir().idx()]
+            [SpreadHist::piece_type_idx(pos, mv)]
+    }
+
+    fn piece_type_idx(pos: &Position, mv: Move) -> usize {
+        let mut res: usize = 0;
+        let mut sq_bb = mv.sq().bb().raw();
+        let p1 = pos.player_bb(Player::P1);
+        let p2 = pos.player_bb(Player::P2);
+        let rot = (64 + mv.dir().offset()) as u32 & 63;
+
+        for _ in 1..6 {
+            sq_bb = sq_bb.rotate_left(rot);
+            let has_p1 = p1.raw() & sq_bb != 0;
+            let has_p2 = p2.raw() & sq_bb != 0;
+            // 0 => no piece
+            // 1 => p1 flat
+            // 2 => p2 flat
+            res *= 3;
+            res += has_p1 as usize;
+            res += has_p2 as usize * 2;
+        }
+
+        sq_bb = sq_bb.rotate_left(rot);
+        let has_p1 = p1.raw() & sq_bb != 0;
+        let has_p2 = p2.raw() & sq_bb != 0;
+        let final_pt = pos.stacks().top(mv.spread_dest());
+        // 0 => no piece
+        // 1 => p1 flat
+        // 2 => p2 flat
+        // 3 => p1 wall
+        // 4 => p1 wall
+        res = res * 5;
+        res += has_p1 as usize;
+        res += has_p2 as usize * 2;
+        res += (final_pt == Some(PieceType::Wall)) as usize * 2;
+
+        res
+    }
+}
+
+impl Default for SpreadHist {
+    fn default() -> Self {
+        Self {
+            entries: [[[[Default::default(); Self::PT_ENTRIES]; Direction::COUNT]; 5];
+                Square::COUNT],
+        }
+    }
+}
+
+#[derive(Clone, Default)]
 struct SidedTables {
     hist: CombinedHist,
     conthist: ConthistTable,
+    spread: SpreadHist,
 }
 
 pub struct History {
@@ -179,6 +245,9 @@ impl History {
         if let Some(prev) = prev {
             tables.conthist[prev][mv].update(bonus);
         }
+        if mv.is_spread() {
+            tables.spread.entry_mut(pos, mv).update(bonus);
+        }
     }
 
     #[must_use]
@@ -187,6 +256,9 @@ impl History {
         let mut res = tables.hist[mv].get();
         if let Some(prev) = prev {
             res += tables.conthist[prev][mv].get();
+        }
+        if mv.is_spread() {
+            res += tables.spread.entry(pos, mv).get();
         }
         res
     }
