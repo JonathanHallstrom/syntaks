@@ -22,7 +22,7 @@
  */
 
 use crate::board::{FlatCountOutcome, Position};
-use crate::core::{PieceType, Square};
+use crate::core::PieceType;
 use crate::eval::static_eval;
 use crate::limit::Limits;
 use crate::movegen::generate_moves;
@@ -430,6 +430,10 @@ impl SearcherImpl {
                     }
 
                     r -= thread.history.score(pos, mv, prev_move) / 8;
+
+                    if tt_entry.mv.is_none() {
+                        r += 512;
+                    }
 
                     r /= 1024;
 
