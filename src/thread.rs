@@ -34,8 +34,8 @@ use crate::{
     search::{MAX_DEPTH, SCORE_INF, Score},
     takmove::Move,
 };
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 pub struct SearcherCount {
@@ -98,6 +98,7 @@ pub struct SharedContext {
     stopped: AtomicBool,
     counter: Arc<SearcherCount>,
     nodes: NodeCounter,
+    result: Mutex<Option<RootMove>>,
 }
 
 impl SharedContext {
@@ -111,6 +112,7 @@ impl SharedContext {
             stopped: AtomicBool::new(false),
             counter: Arc::new(SearcherCount::new()),
             nodes: NodeCounter::new(1),
+            result: Mutex::new(None),
         }
     }
 
@@ -125,6 +127,15 @@ impl SharedContext {
         self.stopped.store(false, Ordering::Relaxed);
         self.counter.start();
         self.nodes.reset();
+        *self.result.get_mut().unwrap() = None;
+    }
+
+    pub fn set_result(&self, root_move: RootMove) {
+        *self.result.lock().unwrap() = Some(root_move);
+    }
+
+    pub fn result(&self) -> Option<RootMove> {
+        self.result.lock().unwrap().clone()
     }
 
     pub fn get_counter(&self) -> Arc<SearcherCount> {

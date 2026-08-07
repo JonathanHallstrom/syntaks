@@ -557,7 +557,11 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
                     break;
                 }
 
-                if thread.is_main_thread() && !thread.shared().options.minimal && ctx.multipv == 1 {
+                if thread.is_main_thread()
+                    && !thread.shared().options.minimal
+                    && !thread.shared().options.silent
+                    && ctx.multipv == 1
+                {
                     let time = thread.shared().elapsed();
                     if time >= WIDEN_REPORT_DELAY {
                         let nodes = thread.shared().total_nodes();
@@ -588,9 +592,10 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
                     thread.shared().stop();
                 }
 
-                if thread.shared().has_stopped()
-                    || (!thread.shared().options.minimal
-                        && (last_pv || thread.shared().elapsed() >= VERBOSE_MULTIPV_DELAY))
+                if !thread.shared().options.silent
+                    && (thread.shared().has_stopped()
+                        || (!thread.shared().options.minimal
+                            && (last_pv || thread.shared().elapsed() >= VERBOSE_MULTIPV_DELAY)))
                 {
                     report(thread, thread.shared().elapsed(), ctx.multipv);
                 }
@@ -613,8 +618,12 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
     if thread.is_main_thread() {
         counter.unregister_and_wait();
 
-        let time = thread.shared().elapsed();
-        final_report(thread, thread.root_depth, time, ctx.multipv);
+        thread.shared().set_result(thread.pv_move().clone());
+
+        if !thread.shared().options.silent {
+            let time = thread.shared().elapsed();
+            final_report(thread, thread.root_depth, time, ctx.multipv);
+        }
 
         thread.shared = None;
         counter.complete_search();
@@ -735,8 +744,6 @@ pub struct Searcher {
     shared_ctx: Arc<SharedContext>,
     threads: Vec<JoinHandle<()>>,
     sender: Sender<ThreadCommand>,
-    root_moves: Arc<Vec<RootMove>>,
-    key_history: Arc<Vec<u64>>,
 }
 
 impl Searcher {
@@ -764,8 +771,6 @@ impl Searcher {
             shared_ctx,
             threads: vec![thread],
             sender,
-            root_moves: Arc::new(Vec::with_capacity(1024)),
-            key_history: Arc::new(Vec::with_capacity(1024)),
         }
     }
 
@@ -801,25 +806,15 @@ impl Searcher {
             ctx.init_search(options, start_time, limits);
         });
 
-        self.init_root_moves(pos, moves_to_search);
-
-        {
-            let key_history = Arc::get_mut(&mut self.key_history).unwrap();
-
-            key_history.clear();
-            key_history.reserve(new_key_history.len() + MAX_DEPTH as usize);
-
-            key_history.extend_from_slice(new_key_history);
-        }
-
-        let multipv = options.multipv.min(self.root_moves.len());
+        let root_moves = init_root_moves(pos, moves_to_search);
+        let multipv = options.multipv.min(root_moves.len());
 
         let ctx = SearchContext::new(
             max_depth,
             multipv,
             *pos,
-            self.root_moves.clone(),
-            self.key_history.clone(),
+            Arc::new(root_moves),
+            Arc::new(new_key_history.to_vec()),
         );
 
         self.sender
@@ -828,6 +823,10 @@ impl Searcher {
 
     pub fn stop(&mut self) {
         self.shared_ctx.stop();
+    }
+
+    pub fn result(&self) -> RootMove {
+        self.shared_ctx.result().unwrap()
     }
 
     pub fn is_searching(&self) -> bool {
@@ -902,35 +901,24 @@ impl Searcher {
 
         self.sender.send(ThreadCommand::Ping);
     }
+}
 
-    fn init_root_moves(&mut self, root_pos: &Position, moves_to_search: &[Move]) {
-        let root_moves = Arc::get_mut(&mut self.root_moves).unwrap();
-
-        root_moves.clear();
-
-        if !moves_to_search.is_empty() {
-            print!("info string searchmoves:");
-            for &mv in moves_to_search {
-                assert!(root_pos.is_legal(mv));
-                print!(" {}", mv);
-                let root_move = RootMove::new(mv);
-                root_moves.push(root_move);
-            }
-            println!();
-            return;
+fn init_root_moves(root_pos: &Position, moves_to_search: &[Move]) -> Vec<RootMove> {
+    if !moves_to_search.is_empty() {
+        print!("info string searchmoves:");
+        for &mv in moves_to_search {
+            assert!(root_pos.is_legal(mv));
+            print!(" {}", mv);
         }
+        println!();
 
-        let mut new_root_moves = Vec::with_capacity(1024);
-        generate_moves(&mut new_root_moves, root_pos);
-
-        root_moves.clear();
-        root_moves.reserve(new_root_moves.len());
-
-        for mv in new_root_moves {
-            let root_move = RootMove::new(mv);
-            root_moves.push(root_move);
-        }
+        return moves_to_search.iter().map(|&mv| RootMove::new(mv)).collect();
     }
+
+    let mut moves = Vec::with_capacity(1024);
+    generate_moves(&mut moves, root_pos);
+
+    moves.iter().map(|&mv| RootMove::new(mv)).collect()
 }
 
 impl Drop for Searcher {

@@ -745,6 +745,16 @@ impl Position {
         tps
     }
 
+    pub(crate) fn push_piece(&mut self, sq: Square, pt: PieceType, player: Player) {
+        self.stacks.push(sq, pt, player);
+    }
+
+    pub(crate) fn finish_build(&mut self, stm: Player, ply: u16) {
+        self.stm = stm;
+        self.ply = ply;
+        self.regen();
+    }
+
     fn regen(&mut self) {
         self.players.fill(Bitboard::empty());
         self.pieces.fill(Bitboard::empty());

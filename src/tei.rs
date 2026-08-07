@@ -43,6 +43,7 @@ pub struct TeiOptions {
     pub multipv: usize,
     pub minimal: bool,
     pub show_curr_move: bool,
+    pub silent: bool,
 }
 
 impl Default for TeiOptions {
@@ -51,6 +52,7 @@ impl Default for TeiOptions {
             multipv: 1,
             minimal: false,
             show_curr_move: false,
+            silent: false,
         }
     }
 }
@@ -376,7 +378,7 @@ impl TeiHandler {
                     }
 
                     if let Ok(nodes) = args[i].parse() {
-                        if !limits.set_nodes(nodes) {
+                        if !(limits.set_soft_nodes(nodes) && limits.set_hard_nodes(nodes)) {
                             eprintln!("Duplicate node limits");
                             return;
                         }
