@@ -194,23 +194,38 @@ fn invalid_data(msg: &str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, msg.to_owned())
 }
 
-pub fn read_game(reader: &mut impl Read) -> std::io::Result<Option<Game>> {
-    let mut rec = [0u8; POSITION_RECORD_SIZE];
+pub fn read_game_bytes(reader: &mut impl Read, buf: &mut Vec<u8>) -> std::io::Result<bool> {
+    buf.resize(POSITION_RECORD_SIZE, 0);
 
-    if reader.read(&mut rec[..1])? == 0 {
-        return Ok(None);
+    if reader.read(&mut buf[..1])? == 0 {
+        return Ok(false);
     }
-    reader.read_exact(&mut rec[1..])?;
+    reader.read_exact(&mut buf[1..POSITION_RECORD_SIZE])?;
+
+    let count = u16::from_le_bytes([buf[COUNT_BYTES], buf[COUNT_BYTES + 1]]) as usize;
+
+    buf.resize(POSITION_RECORD_SIZE + 4 * count, 0);
+    reader.read_exact(&mut buf[POSITION_RECORD_SIZE..])?;
+
+    Ok(true)
+}
+
+pub fn parse_game(bytes: &[u8]) -> std::io::Result<Game> {
+    let (rec, move_bytes) = bytes
+        .split_at_checked(POSITION_RECORD_SIZE)
+        .ok_or_else(|| invalid_data("truncated record"))?;
+    let rec: &[u8; POSITION_RECORD_SIZE] = rec.try_into().unwrap();
 
     let result = GameResult::from_raw((rec[FLAGS_BYTE] >> 2) & 0b11).ok_or_else(|| invalid_data("bad game result"))?;
     let count = u16::from_le_bytes([rec[COUNT_BYTES], rec[COUNT_BYTES + 1]]) as usize;
 
-    let root = decode_position(&rec).map_err(|err| invalid_data(&format!("bad position: {:?}", err)))?;
+    if move_bytes.len() != 4 * count {
+        return Err(invalid_data("truncated moves"));
+    }
 
-    let mut buf = vec![0u8; 4 * count];
-    reader.read_exact(&mut buf)?;
+    let root = decode_position(rec).map_err(|err| invalid_data(&format!("bad position: {:?}", err)))?;
 
-    let moves = buf
+    let moves = move_bytes
         .as_chunks::<4>()
         .0
         .iter()
@@ -221,7 +236,17 @@ pub fn read_game(reader: &mut impl Read) -> std::io::Result<Option<Game>> {
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| invalid_data("null move"))?;
 
-    Ok(Some(Game { root, result, moves }))
+    Ok(Game { root, result, moves })
+}
+
+pub fn read_game(reader: &mut impl Read) -> std::io::Result<Option<Game>> {
+    let mut buf = Vec::new();
+
+    if !read_game_bytes(reader, &mut buf)? {
+        return Ok(None);
+    }
+
+    parse_game(&buf).map(Some)
 }
 
 #[cfg(test)]

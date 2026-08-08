@@ -59,7 +59,7 @@ fn main() {
             final_lr: 0.001 * 0.3 * 0.3,
             final_superbatch: SUPERBATCHES,
         },
-        save_rate: 40,
+        save_rate: SUPERBATCHES,
     };
 
     let settings = LocalSettings {
@@ -69,5 +69,5 @@ fn main() {
         batch_queue_size: 64,
     };
 
-    trainer.run(&schedule, &settings, &TakReader { paths: data_paths });
+    trainer.run(&schedule, &settings, &TakReader::new(data_paths, 1024, 4));
 }
