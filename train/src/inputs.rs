@@ -1,4 +1,5 @@
 use bullet_lib::game::inputs::SparseInputType;
+use bullet_lib::game::outputs::OutputBuckets;
 use bullet_lib::value::loader::{GameResult as LoaderResult, LoadableDataType};
 use syntaks::board::Position;
 use syntaks::core::{Player, Square};
@@ -11,6 +12,7 @@ pub struct TakBoard {
     tops: [u8; 36],
     score: i16,
     result: u8,
+    stm: u8,
 }
 
 impl TakBoard {
@@ -36,7 +38,19 @@ impl TakBoard {
             tops,
             score,
             result: result.raw(),
+            stm: stm.raw(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct StmBucket;
+
+impl OutputBuckets<TakBoard> for StmBucket {
+    const BUCKETS: usize = 2;
+
+    fn bucket(&self, pos: &TakBoard) -> u8 {
+        pos.stm
     }
 }
 

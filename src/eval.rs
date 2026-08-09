@@ -34,8 +34,8 @@ const SCALE: i32 = 400;
 struct Network {
     l0w: [[i16; HL]; 216],
     l0b: [i16; HL],
-    l1w: [[i16; HL]; 2],
-    l1b: i16,
+    l1w: [[[i16; HL]; 2]; 2],
+    l1b: [i16; 2],
 }
 
 static NET: Network = unsafe { std::mem::transmute(*include_bytes!(env!("EVALFILE"))) };
@@ -69,14 +69,14 @@ pub fn static_eval(pos: &Position) -> Score {
 
     let mut sum = 0;
 
-    for (perspective, weights) in [stm, stm.flip()].iter().zip(&NET.l1w) {
+    for (perspective, weights) in [stm, stm.flip()].iter().zip(&NET.l1w[stm.idx()]) {
         for (&a, &w) in accs[perspective.idx()].iter().zip(weights) {
             let c = a.clamp(0, QA as i16);
             sum += i32::from(c) * i32::from(c * w);
         }
     }
 
-    let eval = (sum / QA + i32::from(NET.l1b)) * SCALE / (QA * QB);
+    let eval = (sum / QA + i32::from(NET.l1b[stm.idx()])) * SCALE / (QA * QB);
 
     (eval as Score).clamp(-SCORE_WIN, SCORE_WIN)
 }

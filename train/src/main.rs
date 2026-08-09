@@ -1,6 +1,8 @@
 mod inputs;
 mod loader;
 
+use std::fmt::format;
+
 use bullet_lib::{
     nn::optimiser::AdamW,
     trainer::{
@@ -10,7 +12,7 @@ use bullet_lib::{
     },
     value::ValueTrainerBuilder,
 };
-use inputs::{NUM_INPUTS, Tak216};
+use inputs::{NUM_INPUTS, StmBucket, Tak216};
 use loader::TakReader;
 
 const HIDDEN_SIZE: usize = 32;
@@ -28,24 +30,25 @@ fn main() {
         .dual_perspective()
         .optimiser(AdamW)
         .inputs(Tak216)
+        .output_buckets(StmBucket)
         .save_format(&[
             SavedFormat::id("l0w").round().quantise::<i16>(QA),
             SavedFormat::id("l0b").round().quantise::<i16>(QA),
-            SavedFormat::id("l1w").round().quantise::<i16>(QB),
+            SavedFormat::id("l1w").round().quantise::<i16>(QB).transpose(),
             SavedFormat::id("l1b").round().quantise::<i16>(QA * QB),
         ])
         .loss_fn(|output, target| output.sigmoid().squared_error(target))
-        .build(|builder, stm_inputs, ntm_inputs| {
+        .build(|builder, stm_inputs, ntm_inputs, output_buckets| {
             let l0 = builder.new_affine("l0", NUM_INPUTS, HIDDEN_SIZE);
-            let l1 = builder.new_affine("l1", 2 * HIDDEN_SIZE, 1);
+            let l1 = builder.new_affine("l1", 2 * HIDDEN_SIZE, 2);
 
             let stm_hidden = l0.forward(stm_inputs).screlu();
             let ntm_hidden = l0.forward(ntm_inputs).screlu();
-            l1.forward(stm_hidden.concat(ntm_hidden))
+            l1.forward(stm_hidden.concat(ntm_hidden)).select(output_buckets)
         });
 
     let schedule = TrainingSchedule {
-        net_id: "tak216".to_string(),
+        net_id: format!("{HIDDEN_SIZE}"),
         eval_scale: SCALE as f32,
         steps: TrainingSteps {
             batch_size: 16_384,
@@ -55,8 +58,8 @@ fn main() {
         },
         wdl_scheduler: wdl::ConstantWDL { value: 0.3 },
         lr_scheduler: lr::CosineDecayLR {
-            initial_lr: 0.001,
-            final_lr: 0.001 * 0.3 * 0.3,
+            initial_lr: 1e-3,
+            final_lr: 1e-5,
             final_superbatch: SUPERBATCHES,
         },
         save_rate: SUPERBATCHES,
