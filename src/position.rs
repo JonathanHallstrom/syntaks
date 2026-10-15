@@ -212,6 +212,7 @@ pub struct Position {
     stm_key: u64,
     roads: [bool; Color::COUNT],
     influence: [[Bitboard; 4]; Color::COUNT],
+    komi: u32,
 }
 
 impl Position {
@@ -231,7 +232,12 @@ impl Position {
             stm_key: 0,
             roads: Default::default(),
             influence: Default::default(),
+            komi: Self::KOMI,
         }
+    }
+
+    pub fn set_komi(&mut self, komi: u32) {
+        self.komi = komi;
     }
 
     pub fn from_tps_parts(parts: &[&str]) -> Result<Self, TpsError> {
@@ -447,7 +453,7 @@ impl Position {
     pub fn fcd(&self, color: Color) -> i32 {
         let white_advantage = self.color_piece_bb(Piece::WhiteFlat).popcount() as i32
             - self.color_piece_bb(Piece::BlackFlat).popcount() as i32
-            - Self::KOMI as i32;
+            - self.komi as i32;
         white_advantage * color.sign()
     }
 
@@ -459,7 +465,7 @@ impl Position {
         }
 
         let w_flats = self.color_piece_bb(Piece::WhiteFlat).popcount();
-        let b_flats = self.color_piece_bb(Piece::BlackFlat).popcount() + Self::KOMI;
+        let b_flats = self.color_piece_bb(Piece::BlackFlat).popcount() + self.komi;
 
         match w_flats.cmp(&b_flats) {
             Ordering::Less => FlatCountOutcome::Win(Color::Black),

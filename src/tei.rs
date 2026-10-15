@@ -63,6 +63,7 @@ struct TeiHandler {
     key_history: Vec<u64>,
     searcher: Searcher,
     options: TeiOptions,
+    komi: u32,
 }
 
 impl TeiHandler {
@@ -73,6 +74,7 @@ impl TeiHandler {
             key_history: Vec::with_capacity(1024),
             searcher: Searcher::new(),
             options: TeiOptions::default(),
+            komi: Position::KOMI,
         }
     }
 
@@ -121,8 +123,8 @@ impl TeiHandler {
         println!("id author {}", AUTHORS);
 
         println!(
-            "option name HalfKomi type spin default {} min {} max {}",
-            half_komi, half_komi, half_komi
+            "option name HalfKomi type combo default {} var 0 var {}",
+            half_komi, half_komi
         );
         println!(
             "option name Hash type spin default {} min 1 max {}",
@@ -203,10 +205,13 @@ impl TeiHandler {
 
         match name.as_str() {
             "halfkomi" => {
-                if let Ok(half_komi) = value.parse::<u32>()
-                    && half_komi != Position::KOMI * 2
-                {
-                    eprintln!("Unsupported komi value");
+                if let Ok(half_komi) = value.parse::<u32>() {
+                    if half_komi == 0 || half_komi == Position::KOMI * 2 {
+                        self.komi = half_komi / 2;
+                        self.pos.set_komi(self.komi);
+                    } else {
+                        eprintln!("Unsupported komi value");
+                    }
                 }
             }
             "hash" => {
@@ -295,6 +300,8 @@ impl TeiHandler {
                 return;
             }
         }
+
+        self.pos.set_komi(self.komi);
 
         if next >= args.len() || args[next] != "moves" {
             return;
