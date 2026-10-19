@@ -26,7 +26,7 @@ use crate::limit::Limits;
 use crate::node_counter::NodeCounter;
 use crate::position::FlatCountOutcome;
 use crate::tei::TeiOptions;
-use crate::ttable::{DEFAULT_TT_SIZE_MIB, TranspositionTable};
+use crate::ttable::TranspositionTable;
 use crate::{
     core::{SCORE_INF, Score},
     correction::CorrectionHistory,
@@ -108,10 +108,10 @@ pub struct SharedContext {
 }
 
 impl SharedContext {
-    pub fn new() -> Self {
+    pub fn new(tt_size_mib: usize) -> Self {
         let time = Instant::now();
         Self {
-            tt: TranspositionTable::new(DEFAULT_TT_SIZE_MIB),
+            tt: TranspositionTable::new(tt_size_mib),
             options: Default::default(),
             start_time: time,
             limits: Limits::new(time),
@@ -131,6 +131,7 @@ impl SharedContext {
         self.options = *options;
         self.start_time = start_time;
         self.limits = limits;
+        self.tt.age();
         self.stopped.store(false, Ordering::Relaxed);
         self.counter.start();
         self.nodes.reset();

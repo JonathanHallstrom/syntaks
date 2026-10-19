@@ -39,8 +39,6 @@ struct Keys {
     blockers: u64,
     roads: u64,
     tops: u64,
-    caps: u64,
-    walls: u64,
 }
 
 impl Keys {
@@ -57,12 +55,6 @@ impl Keys {
         if pt.is_road() {
             self.roads ^= keys::top_key(pt, sq);
         }
-        if pt == PieceType::Capstone {
-            self.caps ^= keys::top_key(pt, sq);
-        }
-        if pt == PieceType::Wall {
-            self.walls ^= keys::top_key(pt, sq);
-        }
     }
 
     fn toggle_color_key(&mut self, height: u8, color: Color, sq: Square) {
@@ -71,34 +63,32 @@ impl Keys {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub struct Stacks {
+struct Stacks {
     colors: [u64; Square::COUNT],
     heights: [u8; Square::COUNT],
-    tops: [Option<PieceType>; Square::COUNT],
+    tops: [Option<Piece>; Square::COUNT],
     keys: Keys,
 }
 
 impl Stacks {
-    // all flats + cap
-    pub const MAX_HEIGHT: usize = TOTAL_FLATS as usize * 2 + TOTAL_CAPS as usize;
-
     #[must_use]
     pub fn is_empty(&self, sq: Square) -> bool {
         self.tops[sq].is_none()
     }
 
     #[must_use]
-    pub fn top(&self, sq: Square) -> Option<PieceType> {
+    pub fn top(&self, sq: Square) -> Option<Piece> {
         self.tops[sq]
     }
 
     #[must_use]
+    pub fn top_pt(&self, sq: Square) -> Option<PieceType> {
+        self.tops[sq].map(Piece::piece_type)
+    }
+
+    #[must_use]
     pub fn top_color(&self, sq: Square) -> Option<Color> {
-        if self.tops[sq].is_none() {
-            None
-        } else {
-            Some(Color::from_raw((self.colors[sq] & 0x1) as u8).unwrap())
-        }
+        self.tops[sq].map(Piece::color)
     }
 
     #[must_use]
@@ -112,10 +102,10 @@ impl Stacks {
     }
 
     fn push(&mut self, sq: Square, pt: PieceType, color: Color) {
-        debug_assert_ne!(self.tops[sq], Some(PieceType::Capstone));
+        debug_assert!(self.tops[sq].is_none_or(|piece| piece.piece_type() != PieceType::Capstone));
 
         if let Some(prev_top) = self.tops[sq] {
-            self.keys.toggle_top_key(prev_top, sq);
+            self.keys.toggle_top_key(prev_top.piece_type(), sq);
         }
 
         self.keys.toggle_top_key(pt, sq);
@@ -128,10 +118,10 @@ impl Stacks {
 
         self.heights[sq] += 1;
 
-        self.tops[sq] = Some(pt);
+        self.tops[sq] = Some(pt.with_color(color));
     }
 
-    fn take(&mut self, sq: Square, count: u8) -> (u8, PieceType, Option<Color>) {
+    fn take(&mut self, sq: Square, count: u8) -> (u8, Piece, Option<Color>) {
         debug_assert!(count <= self.heights[sq]);
         debug_assert!(count > 0);
         debug_assert!(count <= 6);
@@ -139,7 +129,7 @@ impl Stacks {
         let colors = self.colors[sq] & ((1 << count) - 1);
         let top = self.tops[sq].unwrap();
 
-        self.keys.toggle_top_key(top, sq);
+        self.keys.toggle_top_key(top.piece_type(), sq);
 
         let height = self.heights[sq];
 
@@ -157,8 +147,8 @@ impl Stacks {
             (colors as u8, top, None)
         } else {
             self.keys.toggle_top_key(PieceType::Flat, sq);
-            self.tops[sq] = Some(PieceType::Flat);
             let new_top_color = Color::from_raw((self.colors[sq] & 0x1) as u8).unwrap();
+            self.tops[sq] = Some(PieceType::Flat.with_color(new_top_color));
             (colors as u8, top, Some(new_top_color))
         }
     }
@@ -169,9 +159,9 @@ impl Stacks {
         for sq in occ {
             let mut colors = self.colors(sq);
             let height = self.height(sq);
-            let top = self.top(sq).unwrap();
+            let top_pt = self.top_pt(sq).unwrap();
 
-            self.keys.toggle_top_key(top, sq);
+            self.keys.toggle_top_key(top_pt, sq);
 
             for i in 0..height {
                 let height = height - i - 1;
@@ -218,6 +208,9 @@ pub struct Position {
 impl Position {
     pub const CARRY_LIMIT: u8 = 6;
     pub const KOMI: u32 = 2;
+
+    // all flats + cap
+    pub const MAX_STACK_HEIGHT: usize = TOTAL_FLATS as usize * 2 + TOTAL_CAPS as usize;
 
     #[must_use]
     pub fn startpos() -> Self {
@@ -340,8 +333,39 @@ impl Position {
     }
 
     #[must_use]
-    pub fn stacks(&self) -> &Stacks {
-        &self.stacks
+    #[inline(always)]
+    pub fn is_empty(&self, sq: Square) -> bool {
+        self.stacks.is_empty(sq)
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn top(&self, sq: Square) -> Option<Piece> {
+        self.stacks.top(sq)
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn top_pt(&self, sq: Square) -> Option<PieceType> {
+        self.stacks.top_pt(sq)
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn top_color(&self, sq: Square) -> Option<Color> {
+        self.stacks.top_color(sq)
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn height(&self, sq: Square) -> u8 {
+        self.stacks.height(sq)
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn colors(&self, sq: Square) -> u64 {
+        self.stacks.colors(sq)
     }
 
     #[must_use]
@@ -386,7 +410,7 @@ impl Position {
 
     #[must_use]
     pub fn key(&self) -> u64 {
-        self.stm_key ^ self.stacks().keys.stacks
+        self.stm_key ^ self.stacks.keys.stacks
     }
 
     #[must_use]
@@ -405,23 +429,13 @@ impl Position {
     }
 
     #[must_use]
-    pub fn cap_key(&self) -> u64 {
-        self.stacks.keys.caps
-    }
-
-    #[must_use]
-    pub fn wall_key(&self) -> u64 {
-        self.stacks.keys.walls
-    }
-
-    #[must_use]
     pub fn all_blockers(&self) -> Bitboard {
         self.piece_bb(PieceType::Wall) | self.piece_bb(PieceType::Capstone)
     }
 
     #[must_use]
     pub fn blockers(&self, color: Color) -> Bitboard {
-        self.all_blockers() & self.color_bb(color)
+        self.color_bb(color) & !self.piece_bb(PieceType::Flat)
     }
 
     #[must_use]
@@ -431,7 +445,7 @@ impl Position {
 
     #[must_use]
     pub fn roads(&self, color: Color) -> Bitboard {
-        self.all_roads() & self.color_bb(color)
+        self.color_bb(color) & !self.piece_bb(PieceType::Wall)
     }
 
     #[must_use]
@@ -498,7 +512,7 @@ impl Position {
             if dist > max_dist {
                 return false;
             } else if dist == max_dist
-                && let Some(hit_top) = self.stacks.top(hit_sq)
+                && let Some(hit_top) = self.stacks.top_pt(hit_sq)
             {
                 match hit_top {
                     PieceType::Flat => {}
@@ -508,7 +522,7 @@ impl Position {
                             return false;
                         }
 
-                        let top = self.stacks.top(mv.sq()).unwrap();
+                        let top = self.stacks.top_pt(mv.sq()).unwrap();
                         if top != PieceType::Capstone {
                             return false;
                         }
@@ -569,15 +583,19 @@ impl Position {
                 new_pos.colors[self.stm()].toggle_sq(mv.sq());
             }
 
-            if top != PieceType::Flat || new_top_color.is_none() {
-                new_pos.pieces[top].toggle_sq(mv.sq());
+            if top.piece_type() != PieceType::Flat || new_top_color.is_none() {
+                new_pos.pieces[top.piece_type()].toggle_sq(mv.sq());
             }
 
             let mut sq = mv.sq().shift(dir).unwrap();
 
             for idx in 0..taken {
                 let color = Color::from_raw((colors >> color_idx) & 0x1).unwrap();
-                let pt = if idx == taken - 1 { top } else { PieceType::Flat };
+                let pt = if idx == taken - 1 {
+                    top.piece_type()
+                } else {
+                    PieceType::Flat
+                };
 
                 new_pos.stacks.push(sq, pt, color);
                 dirty_bb.set_sq(sq);
@@ -601,14 +619,14 @@ impl Position {
                 new_pos.colors[color] = (new_pos.colors[color] | new_color_bbs[color]) & !new_color_bbs[color ^ 0x1];
             }
 
-            new_pos.pieces[top].set_sq(sq);
+            new_pos.pieces[top.piece_type()].set_sq(sq);
             new_pos.pieces[PieceType::Flat] |= new_flats_bb;
 
-            if let Some(prev_dst_top) = self.stacks.top(sq)
-                && prev_dst_top != top
+            if let Some(prev_dst_top_pt) = self.stacks.top_pt(sq)
+                && prev_dst_top_pt != top.piece_type()
             {
-                new_pos.pieces[prev_dst_top].clear_sq(sq);
-                new_pos.pieces[top].set_sq(sq);
+                new_pos.pieces[prev_dst_top_pt].clear_sq(sq);
+                new_pos.pieces[top.piece_type()].set_sq(sq);
             }
 
             for piece_idx in 0..Piece::COUNT {
@@ -631,14 +649,8 @@ impl Position {
             }
 
             for sq in dirty_bb {
-                let top_before = self
-                    .stacks
-                    .top(sq)
-                    .map(|pt| pt.with_color(self.stacks.top_color(sq).unwrap()));
-                let top_after = new_pos
-                    .stacks
-                    .top(sq)
-                    .map(|pt| pt.with_color(new_pos.stacks.top_color(sq).unwrap()));
+                let top_before = self.stacks.top(sq);
+                let top_after = new_pos.stacks.top(sq);
 
                 let height_before = self.stacks.height(sq);
                 let height_after = new_pos.stacks.height(sq);
@@ -780,7 +792,7 @@ impl Position {
                         }
                     }
 
-                    match self.stacks.top(sq).unwrap() {
+                    match self.stacks.top_pt(sq).unwrap() {
                         PieceType::Flat => {}
                         PieceType::Wall => stack_str.push('S'),
                         PieceType::Capstone => stack_str.push('C'),
@@ -831,16 +843,15 @@ impl Position {
                 continue;
             }
 
-            let color = self.stacks.top_color(sq).unwrap();
             let top = self.stacks.top(sq).unwrap();
 
-            self.colors[color].set_sq(sq);
-            self.pieces[top].set_sq(sq);
+            self.colors[top.color()].set_sq(sq);
+            self.pieces[top.piece_type()].set_sq(sq);
 
-            if top == PieceType::Capstone {
-                self.caps_in_hand[color] -= 1;
+            if top.piece_type() == PieceType::Capstone {
+                self.caps_in_hand[top.color()] -= 1;
             } else {
-                self.flats_in_hand[color] -= 1;
+                self.flats_in_hand[top.color()] -= 1;
             }
 
             let covered = self.stacks.colors(sq) >> 1;

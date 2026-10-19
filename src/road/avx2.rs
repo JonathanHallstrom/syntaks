@@ -25,8 +25,14 @@ use crate::bitboard::Bitboard;
 use std::arch::x86_64::*;
 
 #[must_use]
-#[target_feature(enable = "avx2")]
 pub(super) fn influence(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
+    //SAFETY: self-explanatory
+    unsafe { influence_avx2(road_occ, edges) }
+}
+
+#[must_use]
+#[target_feature(enable = "avx2")]
+fn influence_avx2(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
     // https://github.com/rust-lang/rust/issues/111147
     const fn mm_shuffle(z: u32, y: u32, x: u32, w: u32) -> i32 {
         ((z << 6) | (y << 4) | (x << 2) | w) as i32
@@ -48,7 +54,7 @@ pub(super) fn influence(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
         let next_masks_r = _mm256_andnot_si256(right_edge, _mm256_srli_epi64::<1>(masks));
         let next_masks_lr = _mm256_or_si256(next_masks_l, next_masks_r);
 
-        _mm256_or_si256(next_masks_ud, next_masks_lr)
+        _mm256_or_si256(masks, _mm256_or_si256(next_masks_ud, next_masks_lr))
     };
 
     let mut influence_masks = calc_next_masks(masks);

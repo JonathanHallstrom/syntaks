@@ -39,11 +39,14 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 pub const MAX_THREADS: u32 = 2048;
-pub const MAX_DEPTH: i32 = 255;
+pub const MAX_DEPTH: i32 = 248;
 
 const WIDEN_REPORT_DELAY: f64 = 1.0;
 const VERBOSE_MULTIPV_DELAY: f64 = 1.0;
 const CURRMOVE_REPORT_DELAY: f64 = 2.5;
+
+const WDL_A: f64 = 204.89;
+const WDL_B: f64 = 139.97;
 
 #[derive(Clone, Debug)]
 pub struct SearchContext {
@@ -186,7 +189,9 @@ fn search<NT: NodeType>(
 
         let influence = pos.influence(pos.stm());
 
-        let criticals = (influence[0] & influence[1]) | (influence[2] & influence[3]);
+        let vert_crit = influence[0] & influence[1];
+        let horz_crit = influence[2] & influence[3];
+        let criticals = vert_crit | horz_crit;
         let open_criticals = criticals & !pos.occ();
 
         if !open_criticals.is_empty() {
@@ -194,16 +199,47 @@ fn search<NT: NodeType>(
             return SCORE_MATE - ply - 1;
         }
 
-        if pos.flats_in_hand(pos.stm()) == 1 && pos.caps_in_hand(pos.stm()) == 0 && pos.fcd(pos.stm()) >= 0 {
-            push_to_pv(!pos.occ());
-            return SCORE_MATE - ply - 1;
+        for (criticals, edges) in [
+            (vert_crit, Bitboard::UPPER_EDGE | Bitboard::LOWER_EDGE),
+            (horz_crit, Bitboard::LEFT_EDGE | Bitboard::RIGHT_EDGE),
+        ] {
+            for sq in criticals & pos.piece_bb(PieceType::Flat) {
+                let bit = sq.bb();
+                let neighbors = bit.shift(Direction::Up)
+                    | bit.shift(Direction::Down)
+                    | bit.shift(Direction::Left)
+                    | bit.shift(Direction::Right);
+                let attackers = neighbors & pos.roads(pos.stm());
+                let edge_bonus = bit & edges;
+                if (attackers | edge_bonus).popcount() >= 3 {
+                    // todo push_to_pv
+                    return SCORE_MATE - ply - 1;
+                }
+            }
+        }
+
+        if (pos.flats_in_hand(pos.stm()) == 1 && pos.caps_in_hand(pos.stm()) == 0)
+            || pos.occ().popcount() == Square::COUNT as u32 - 1
+        {
+            let fcd = pos.fcd(pos.stm());
+
+            if fcd >= 0 {
+                push_to_pv(!pos.occ());
+                return SCORE_MATE - ply - 1;
+            }
+
+            if fcd == -1 && alpha < 0 {
+                push_to_pv(!pos.occ());
+                alpha = 0;
+                if alpha >= beta {
+                    return alpha;
+                }
+            }
         }
     }
 
     if depth <= 0 {
-        let static_eval = static_eval(&mut thread.nnue_state, pos);
-        let correction = thread.corrhist.correction(pos, &thread.key_history);
-        return static_eval + correction;
+        return leaf::<NT>(thread, pos, ply, alpha, beta);
     }
 
     if NT::PV_NODE {
@@ -220,19 +256,19 @@ fn search<NT: NodeType>(
 
     let excluded = thread.stack[ply as usize].excluded;
 
-    let _tt_hit;
+    let tt_hit;
     let tt_entry;
 
     if excluded.is_some() {
-        _tt_hit = false;
+        tt_hit = false;
         tt_entry = ProbedEntry::default();
     } else {
-        (_tt_hit, tt_entry) = thread.shared().tt.probe(pos.key(), ply);
+        (tt_hit, tt_entry) = thread.shared().tt.probe(pos.key(), ply);
 
         if !NT::PV_NODE
             && tt_entry.depth >= depth
             && match tt_entry.flag {
-                None => unreachable!(),
+                None => false,
                 Some(TtFlag::UpperBound) => tt_entry.score <= alpha,
                 Some(TtFlag::LowerBound) => tt_entry.score >= beta,
                 Some(TtFlag::Exact) => true,
@@ -252,7 +288,16 @@ fn search<NT: NodeType>(
         depth -= 1;
     }
 
-    let raw_eval = static_eval(&mut thread.nnue_state, pos);
+    let raw_eval = if tt_hit {
+        tt_entry.raw_static_eval
+    } else {
+        static_eval(&mut thread.nnue_state, pos)
+    };
+
+    if !tt_hit {
+        thread.shared().tt.store_static_eval(pos.key(), raw_eval);
+    }
+
     let correction = thread.corrhist.correction(pos, &thread.key_history);
     let static_eval = raw_eval + correction;
 
@@ -388,7 +433,7 @@ fn search<NT: NodeType>(
         let new_pos = thread.apply_move(ply, pos, mv);
         thread.shared().tt.prefetch(new_pos.key());
 
-        let is_crush = mv.is_spread() && pos.stacks().top(mv.spread_dest()) == Some(PieceType::Wall);
+        let is_crush = mv.is_spread() && pos.top_pt(mv.spread_dest()) == Some(PieceType::Wall);
 
         if extension == 0 && is_crush {
             extension += 1;
@@ -411,6 +456,7 @@ fn search<NT: NodeType>(
                 let mut r = LMR_REDUCTIONS[depth as usize - 1][move_count.min(LMR_TABLE_MOVES) - 1];
 
                 r += 1024 * i32::from(!NT::PV_NODE);
+                r += 1024 * i32::from(!improving);
                 r -= thread.history.score(pos, mv, prev_move) / 24;
 
                 if mv.is_spread() {
@@ -552,11 +598,45 @@ fn search<NT: NodeType>(
             thread
                 .shared()
                 .tt
-                .store(pos.key(), best_score, best_move, depth, ply, tt_flag);
+                .store(pos.key(), best_score, raw_eval, best_move, depth, ply, tt_flag);
         }
     }
 
     best_score
+}
+
+fn leaf<NT: NodeType>(thread: &mut ThreadData, pos: &Position, ply: i32, alpha: Score, beta: Score) -> Score {
+    if NT::PV_NODE {
+        thread.update_seldepth(ply);
+    }
+
+    let (tt_hit, tt_entry) = thread.shared().tt.probe(pos.key(), ply);
+
+    if !NT::PV_NODE
+        && match tt_entry.flag {
+            None => false,
+            Some(TtFlag::UpperBound) => tt_entry.score <= alpha,
+            Some(TtFlag::LowerBound) => tt_entry.score >= beta,
+            Some(TtFlag::Exact) => true,
+        }
+    {
+        return tt_entry.score;
+    }
+
+    let raw_eval = if tt_hit {
+        tt_entry.raw_static_eval
+    } else {
+        static_eval(&mut thread.nnue_state, pos)
+    };
+
+    if !tt_hit {
+        thread.shared().tt.store_static_eval(pos.key(), raw_eval);
+    }
+
+    let correction = thread.corrhist.correction(pos, &thread.key_history);
+    let static_eval = raw_eval + correction;
+
+    static_eval
 }
 
 fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut ThreadData) {
@@ -748,7 +828,7 @@ fn report_single(thread: &ThreadData, time: f64, nodes: usize, multipv: usize, p
             }
         }
     } else {
-        let scaled = score * 100 / 220;
+        let scaled = (score as f64 * 100.0 / WDL_A).round() as Score;
         print!("cp {}", scaled);
     }
 
@@ -770,7 +850,7 @@ fn report_single(thread: &ThreadData, time: f64, nodes: usize, multipv: usize, p
         }
     } else {
         let p = |cp: Score| {
-            let x = (-cp as f64 + 40.0) / 267.0;
+            let x = (WDL_A - cp as f64) / WDL_B;
             (1000.0 / (1.0 + x.exp())).round() as i32
         };
 
@@ -825,8 +905,8 @@ pub struct Searcher {
 }
 
 impl Searcher {
-    pub fn new() -> Self {
-        let shared_ctx = Arc::new(SharedContext::new());
+    pub fn new(tt_size_mib: usize) -> Self {
+        let shared_ctx = Arc::new(SharedContext::new(tt_size_mib));
 
         let (mut sender, mut receiver) = channel(1);
 
@@ -914,6 +994,11 @@ impl Searcher {
 
     pub fn wait(&self) {
         self.shared_ctx.get_counter().wait();
+    }
+
+    #[must_use]
+    pub fn total_nodes(&self) -> usize {
+        self.shared_ctx.total_nodes()
     }
 
     fn kill_threads(&mut self) {

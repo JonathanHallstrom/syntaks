@@ -66,13 +66,13 @@ impl NnueState {
     #[must_use]
     pub fn evaluate(&mut self, pos: &Position) -> i32 {
         self.ensure_up_to_date(pos);
-        forward(&self.acc_stacc[self.top_idx], pos.stm())
+        forward(&self.acc_stacc[self.top_idx], pos)
     }
 
     fn ensure_up_to_date(&mut self, pos: &Position) {
         for side in [Color::White, Color::Black] {
             if !self.acc_stacc[self.top_idx].is_dirty(side) {
-                return;
+                continue;
             }
 
             if self.acc_stacc[self.top_idx].ctx.updates.requires_refresh(side) {
