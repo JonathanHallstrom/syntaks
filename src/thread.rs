@@ -22,7 +22,7 @@
  */
 
 use crate::eval::nnue_state::NnueState;
-use crate::limit::Limits;
+use crate::limit::{Limits, TmContext};
 use crate::node_counter::NodeCounter;
 use crate::position::FlatCountOutcome;
 use crate::tei::TeiOptions;
@@ -159,8 +159,8 @@ impl SharedContext {
         self.counter.count.load(Ordering::Relaxed) > 0
     }
 
-    pub fn check_stop_soft(&self, nodes: usize, best_move_nodes_fraction: f64) -> bool {
-        if self.limits.should_stop_soft(nodes, best_move_nodes_fraction) {
+    fn check_stop_soft(&self, ctx: &mut TmContext, depth: i32, total_nodes: usize, pv_move: &RootMove) -> bool {
+        if self.limits.should_stop_soft(ctx, depth, total_nodes, pv_move) {
             self.stopped.store(true, Ordering::Relaxed);
             return true;
         }
@@ -168,7 +168,7 @@ impl SharedContext {
         false
     }
 
-    pub fn check_stop_hard(&self, nodes: usize) -> bool {
+    fn check_stop_hard(&self, nodes: usize) -> bool {
         if self.limits.should_stop_hard(nodes) {
             self.stopped.store(true, Ordering::Relaxed);
             return true;
@@ -275,6 +275,7 @@ pub struct ThreadData {
     pub killers: [KillerTable; MAX_DEPTH as usize],
     pub nnue_state: NnueState,
     pub shared: Option<Arc<SharedContext>>,
+    pub tm_ctx: TmContext,
 }
 
 impl ThreadData {
@@ -289,9 +290,10 @@ impl ThreadData {
             stack: vec![StackEntry::default(); MAX_DEPTH as usize + 1],
             corrhist: CorrectionHistory::boxed(),
             history: History::boxed(),
-            killers: [Default::default(); MAX_DEPTH as usize],
+            killers: [Default::default(); _],
             nnue_state: NnueState::new(),
             shared: None,
+            tm_ctx: Default::default(),
         }
     }
 
@@ -301,6 +303,19 @@ impl ThreadData {
 
     pub fn shared(&self) -> &SharedContext {
         self.shared.as_deref().unwrap()
+    }
+
+    #[must_use]
+    pub fn check_stop_soft(&mut self) -> bool {
+        let nodes = self.nodes();
+        let pv_move = &self.root_moves[0];
+        let shared = self.shared.as_deref().unwrap();
+        shared.check_stop_soft(&mut self.tm_ctx, self.root_depth, nodes, pv_move)
+    }
+
+    #[must_use]
+    pub fn check_stop_hard(&self) -> bool {
+        self.shared().check_stop_hard(self.nodes())
     }
 
     pub fn inc_nodes(&mut self) {

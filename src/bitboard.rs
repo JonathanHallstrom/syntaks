@@ -24,7 +24,29 @@
 use crate::core::*;
 use std::ops::*;
 
+const NEIGHBORS: [Bitboard; Square::COUNT] = {
+    let mut neighbors = [Bitboard::empty(); _];
+
+    let mut i = 0;
+    while i < Square::COUNT {
+        let bit = Square::from_raw(i as u8).unwrap().bb();
+
+        let neighbor_bb = bit
+            .shift(Direction::Up)
+            .or(bit.shift(Direction::Down))
+            .or(bit.shift(Direction::Left))
+            .or(bit.shift(Direction::Right));
+
+        neighbors[i] = neighbor_bb;
+
+        i += 1;
+    }
+
+    neighbors
+};
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
+#[repr(C)]
 pub struct Bitboard {
     raw: u64,
 }
@@ -36,6 +58,8 @@ impl Bitboard {
     pub const LOWER_EDGE: Self = Self::from_raw(0x3f);
     pub const LEFT_EDGE: Self = Self::from_raw(0x41041041);
     pub const RIGHT_EDGE: Self = Self::from_raw(0x820820820);
+
+    pub const EDGES: [Self; 4] = [Self::UPPER_EDGE, Self::LOWER_EDGE, Self::LEFT_EDGE, Self::RIGHT_EDGE];
 
     #[must_use]
     pub const fn empty() -> Self {
@@ -49,7 +73,7 @@ impl Bitboard {
 
     #[must_use]
     pub const fn edge(dir: Direction) -> Self {
-        [Self::UPPER_EDGE, Self::LOWER_EDGE, Self::LEFT_EDGE, Self::RIGHT_EDGE][dir.idx()]
+        Self::EDGES[dir.idx()]
     }
 
     #[must_use]
@@ -168,6 +192,11 @@ impl Bitboard {
             Direction::Left => self.and(Self::LEFT_EDGE.cmpl()).shr(-dir.offset() as u32),
             Direction::Right => self.and(Self::RIGHT_EDGE.cmpl()).shl(dir.offset() as u32),
         }
+    }
+
+    #[must_use]
+    pub const fn neighbors(sq: Square) -> Self {
+        NEIGHBORS[sq.idx()]
     }
 }
 

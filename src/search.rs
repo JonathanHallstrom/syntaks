@@ -45,8 +45,8 @@ const WIDEN_REPORT_DELAY: f64 = 1.0;
 const VERBOSE_MULTIPV_DELAY: f64 = 1.0;
 const CURRMOVE_REPORT_DELAY: f64 = 2.5;
 
-const WDL_A: f64 = 204.89;
-const WDL_B: f64 = 139.97;
+const WDL_A: f64 = 222.13;
+const WDL_B: f64 = 138.82;
 
 #[derive(Clone, Debug)]
 pub struct SearchContext {
@@ -84,7 +84,7 @@ static LMR_REDUCTIONS: [[i32; LMR_TABLE_MOVES]; MAX_DEPTH as usize] = {
     const BASE: f64 = 0.0;
     const DIVISOR: f64 = 3.0;
 
-    let mut reductions = [[0; LMR_TABLE_MOVES]; MAX_DEPTH as usize];
+    let mut reductions = [[0; _]; _];
 
     for depth in 1..MAX_DEPTH as usize {
         let ln_depth = (depth as f64).ln();
@@ -153,11 +153,7 @@ fn search<NT: NodeType>(
         return 0;
     }
 
-    if !NT::ROOT_NODE
-        && thread.is_main_thread()
-        && thread.root_depth > 1
-        && thread.shared().check_stop_hard(thread.nodes())
-    {
+    if !NT::ROOT_NODE && thread.is_main_thread() && thread.root_depth > 1 && thread.check_stop_hard() {
         return 0;
     }
 
@@ -168,6 +164,8 @@ fn search<NT: NodeType>(
             return alpha;
         }
     }
+
+    let beta = beta;
 
     thread.inc_nodes();
 
@@ -204,13 +202,9 @@ fn search<NT: NodeType>(
             (horz_crit, Bitboard::LEFT_EDGE | Bitboard::RIGHT_EDGE),
         ] {
             for sq in criticals & pos.piece_bb(PieceType::Flat) {
-                let bit = sq.bb();
-                let neighbors = bit.shift(Direction::Up)
-                    | bit.shift(Direction::Down)
-                    | bit.shift(Direction::Left)
-                    | bit.shift(Direction::Right);
+                let neighbors = Bitboard::neighbors(sq);
                 let attackers = neighbors & pos.roads(pos.stm());
-                let edge_bonus = bit & edges;
+                let edge_bonus = sq.bb() & edges;
                 if (attackers | edge_bonus).popcount() >= 3 {
                     // todo push_to_pv
                     return SCORE_MATE - ply - 1;
@@ -375,7 +369,7 @@ fn search<NT: NodeType>(
 
         #[allow(clippy::collapsible_if)]
         if !NT::ROOT_NODE && !is_loss(best_score) && (!NT::PV_NODE || !cfg!(feature = "datagen")) {
-            if depth <= 6 && move_count as i32 >= 5 + 2 * depth * depth {
+            if depth <= 6 && move_count as i32 >= (5 + 2 * depth * depth) / (2 - i32::from(improving)) {
                 break;
             }
         }
@@ -452,7 +446,7 @@ fn search<NT: NodeType>(
 
             let new_depth = depth + extension - 1;
 
-            if depth >= 2 && move_count >= 2 + usize::from(NT::PV_NODE) + usize::from(NT::ROOT_NODE) {
+            if depth >= 2 && move_count >= 2 + usize::from(NT::ROOT_NODE) {
                 let mut r = LMR_REDUCTIONS[depth as usize - 1][move_count.min(LMR_TABLE_MOVES) - 1];
 
                 r += 1024 * i32::from(!NT::PV_NODE);
@@ -660,6 +654,10 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
 
     thread.nnue_state.reset(&ctx.root_pos);
 
+    if thread.is_main_thread() {
+        thread.tm_ctx = Default::default();
+    }
+
     let mut data_stack = vec![PlyData::new(); MAX_DEPTH as usize * 2];
 
     thread.root_depth = 1;
@@ -729,10 +727,7 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
 
                 if last_pv
                     && !thread.shared().has_stopped()
-                    && (thread.root_depth >= ctx.max_depth
-                        || thread
-                            .shared()
-                            .check_stop_soft(thread.nodes(), thread.pv_move().nodes as f64 / (thread.nodes() as f64)))
+                    && (thread.root_depth >= ctx.max_depth || thread.check_stop_soft())
                 {
                     thread.shared().stop();
                 }
