@@ -482,7 +482,7 @@ fn search<NT: NodeType>(
                 r += 1024 * i32::from(!NT::PV_NODE);
                 r += 1024 * i32::from(expected_cutnode);
                 r += 1024 * i32::from(!improving);
-                r -= thread.history.score(pos, mv, prev_move) / 24;
+                r -= thread.history.score(pos, mv, prev_move) / 16;
                 r -= (correction.abs() * 8).min(1024);
 
                 let our_influence = new_pos.influence(pos.stm());
