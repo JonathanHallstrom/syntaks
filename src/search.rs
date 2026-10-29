@@ -387,11 +387,11 @@ fn search<NT: NodeType>(
         if !NT::ROOT_NODE && !is_loss(best_score) && (!NT::PV_NODE || !cfg!(feature = "datagen")) {
             if depth <= 8 {
                 let losing = static_eval + 250 <= alpha;
-                let limit = (5 + 2 * depth * depth)
+                let limit = (2 + depth * depth)
                     * (1 + i32::from(improving))
                     * (1 + i32::from(!losing))
                     * (1 + i32::from(NT::PV_NODE))
-                    / 4;
+                    / 2;
                 if move_count as i32 >= limit {
                     break;
                 }
