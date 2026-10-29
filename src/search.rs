@@ -493,7 +493,7 @@ fn search<NT: NodeType>(
 
                 if mv.is_spread() {
                     let gain = (new_pos.hfcd(pos.stm()) - pos.hfcd(pos.stm())) / 2;
-                    r += (1 - gain).clamp(0, 3) * 1024;
+                    r += (1 - gain).clamp(0, 4) * 1024;
                 }
 
                 r /= 1024;
