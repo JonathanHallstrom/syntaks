@@ -384,7 +384,7 @@ fn search<NT: NodeType>(
         }
 
         #[allow(clippy::collapsible_if)]
-        if !NT::ROOT_NODE && !is_loss(best_score) && (!NT::PV_NODE || !cfg!(feature = "datagen")) {
+        if (!NT::ROOT_NODE || mv.is_spread()) && !is_loss(best_score) && (!NT::PV_NODE || !cfg!(feature = "datagen")) {
             if depth <= 8 {
                 let losing = static_eval + 250 <= alpha;
                 let limit = (5 + 2 * depth * depth)
