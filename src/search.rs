@@ -390,7 +390,7 @@ fn search<NT: NodeType>(
                 let limit = (5 + 2 * depth * depth)
                     * (1 + i32::from(improving))
                     * (1 + i32::from(!losing))
-                    * (1 + i32::from(NT::PV_NODE))
+                    * (1 + i32::from(NT::PV_NODE) * 2)
                     / 4;
                 if move_count as i32 >= limit {
                     break;
