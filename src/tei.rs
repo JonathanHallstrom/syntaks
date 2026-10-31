@@ -38,6 +38,36 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const MAX_MULTIPV: usize = 2048;
 
+const DEFAULT_BENCH_DEPTH: i32 = 13;
+
+const BENCH_POSITIONS: [&str; 25] = [
+    "x6/x6/x6/x6/x6/x6 1 1",
+    "2,x5/x2,1,x2,1/x,2,1C,x3/x,1,2,2C,2,x/x,1,x,1,2,2/x5,1 1 11",
+    "2,x5/x,1,1,1,2,1/x,21C,x2,1,x/2,1,2,2C,2,x/x,1212,x,1,2,2/x5,1 1 17",
+    "2,x5/x,1,11,1S,2112S,1/1,2,1,x3/2,121C,2,2C,2,x/x,1212,1S,1,2,2/2,2S,x3,1 1 24",
+    "2,x5/x,1,1,2,x2/x,2,1,2,x2/x2,2C,1C,x2/1,x4,1/x,2,x,2,x,1 1 11",
+    "2,2,x4/2,1,1,2,x2/1,2,1,2,1,1/x,1,2C,1C,x,1/x,21,2,x,2S,1/x,2,2,2,x,1 1 17",
+    "2,2,x4/2,1,1,2,1,x/1,212,x,2221C,1,1/x2,112C,x,1,1/x,21,2,x2,12S/x,2,2,2,x,1 1 24",
+    "2,1,2,x,1,x/x2,2,x3/x3,2C,1,x/x2,1C,1,2,x/x2,2,1,x2/x2,2,1,x2 1 9",
+    "2,1,2,x,1,x/x,1,2,2,2,x/x,2,1,1,1,2/x,2,1C,12C,2,x/x,1,2,1,1,1/x2,2,1,x2 1 15",
+    "2,1,2,x3/2,1,2,2,21,1/x,2,1,1,12,x/212,21,1C,1,2,x/x,12,x,112C,1,1/x2,2,1,x2 1 22",
+    "2,x3,1,x/x4,1,1/x4,1C,x/x,2,x,2,2,12/x4,2S,1/x5,1 1 11",
+    "2,x3,1,x/2,x3,1,1/2C,1,1,x2,2S/2,2,2,2,21C,12/x,1S,2,1,2S,1/x2,1,x2,1 1 17",
+    "2,x,1,2,1,x/2,x,1,2,1,1/2C,2S,1,2,1,2S/2,21,2,221C,2,12/1,1S,2,1,2S,1/x,2,1,2,1,1 1 24",
+    "2,1,x4/1,2,2,x3/x,1,2,2,2,x/x,1C,2C,x3/x,1,x,1,x2/x2,1,x3 1 9",
+    "2,121212,1S,x3/x,2S,1S,x3/x,1,2,2,2,x/x,1C,2C,x3/x,1,x,1,2,x/x2,1,x,1,x 1 15",
+    "2,121212,1S,x3/x,2S,1S,x,1,1/x,1,2,2,2,2/x,1C,1,2,2,x/2,1,12C,1,2,1/1,2,1,1,1,2 1 22",
+    "2,x,2,1,x,1/x2,2,1,x2/x3,12C,x2/x2,2,1,x2/x,2,1,1,x2/x6 1 9",
+    "2,2,2,1,2,1/x,1,21C,1,2,1/x,1,2,12C,1,x/x2,2,1,2,x/x,2,1,1,2,x/x6 1 15",
+    "2,2,2,1,221,1/1,1,x,12S,21112C,1/x,1,221C,x3/x2,2,1,2,x/x,2,1,1,2,x/x3,1,2,x 1 22",
+    "2,1,x4/2,1,x4/x,2,2C,x3/x,1C,1,x3/x,2,1,1,2,1/x,2,x4 1 9",
+    "2,1,x4/2,1,2,x3/2,21,x,1,x2/2,1C,x,2,1,x/1,2,112C,1,2,1/1,2,x4 1 15",
+    "2,1,x4/2,1,2,x2,2/2,21,1,12S,x,1/21C,x,1,2,12,1/x,112112C,x,1,x,1/x,2,x3,1 1 22",
+    "2,x,1,x3/x6/x,2,x4/2,2,x2,2,x/x,1,1C,x,2S,x/x,1,2,1,1,1 1 11",
+    "2,x,1,x3/x4,2,x/x,2,2C,12,1,x/2,2,11C,1S,2,2/1,1,x2,2S,x/x,1,x,12,1,1 1 17",
+    "2,x,1,x3/2,21,1,x,2,x/2,2211C,2C,12,1,x/2,x,2,1S,2,2/1,12S,1,2,2S,x/x,1,1,12,1,1 1 24",
+];
+
 #[derive(Copy, Clone, Debug)]
 pub struct TeiOptions {
     pub multipv: usize,
@@ -60,6 +90,7 @@ struct TeiHandler {
     key_history: Vec<u64>,
     searcher: Searcher,
     options: TeiOptions,
+    half_komi: i8,
 }
 
 impl TeiHandler {
@@ -68,14 +99,23 @@ impl TeiHandler {
         Self {
             pos: Position::startpos(),
             key_history: Vec::with_capacity(1024),
-            searcher: Searcher::new(),
+            searcher: Searcher::new(DEFAULT_TT_SIZE_MIB),
             options: TeiOptions::default(),
+            half_komi: Position::DEFAULT_HALF_KOMI,
         }
     }
 
     fn run(&mut self) {
         let mut line = String::with_capacity(256);
-        while let Ok(bytes) = std::io::stdin().read_line(&mut line) {
+        loop {
+            let bytes = match std::io::stdin().read_line(&mut line) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    eprintln!("Warning: Failed to read from stdin: {}", err);
+                    return;
+                }
+            };
+
             if bytes == 0 {
                 break;
             }
@@ -103,6 +143,7 @@ impl TeiHandler {
                 "d" => self.handle_d(),
                 "perft" => self.handle_perft(args),
                 "splitperft" => self.handle_splitperft(args),
+                "bench" => self.handle_bench(args.first().copied()),
                 "quit" => break,
                 unknown => eprintln!("Unknown command '{}'", unknown),
             }
@@ -112,14 +153,14 @@ impl TeiHandler {
     }
 
     fn handle_tei(&self) {
-        let half_komi = Position::KOMI * 2;
-
         println!("id name {} {}", NAME, VERSION);
         println!("id author {}", AUTHORS);
 
         println!(
             "option name HalfKomi type spin default {} min {} max {}",
-            half_komi, half_komi, half_komi
+            Position::DEFAULT_HALF_KOMI,
+            Position::MIN_HALF_KOMI,
+            Position::MAX_HALF_KOMI
         );
         println!(
             "option name Flats type spin default {} min {} max {}",
@@ -137,6 +178,7 @@ impl TeiHandler {
         println!("option name MultiPV type spin default 1 min 1 max {}", MAX_MULTIPV);
         println!("option name Minimal type check default false");
         println!("option name ShowCurrMove type check default false");
+        println!("option name DoubleBlackStack type check default false");
 
         println!("teiok");
     }
@@ -207,10 +249,16 @@ impl TeiHandler {
 
         match name.as_str() {
             "halfkomi" => {
-                if let Ok(half_komi) = value.parse::<u32>()
-                    && half_komi != Position::KOMI * 2
-                {
-                    eprintln!("Unsupported komi value");
+                if let Ok(half_komi) = value.parse::<i8>() {
+                    if (Position::MIN_HALF_KOMI..=Position::MAX_HALF_KOMI).contains(&half_komi) {
+                        if half_komi != self.half_komi {
+                            self.half_komi = half_komi;
+                            self.pos.set_half_komi(half_komi);
+                            self.searcher.reset();
+                        }
+                    } else {
+                        eprintln!("Unsupported komi value");
+                    }
                 }
             }
             "flats" => {
@@ -251,6 +299,11 @@ impl TeiHandler {
             "showcurrmove" => {
                 if let Ok(show_curr_move) = value.parse::<bool>() {
                     self.options.show_curr_move = show_curr_move;
+                }
+            }
+            "doubleblackstack" => {
+                if let Ok(double_black_stack) = value.parse::<bool>() {
+                    DOUBLE_BLACK_STACK.store(double_black_stack, Ordering::Relaxed);
                 }
             }
             unknown => eprintln!("Unknown option '{}'", unknown),
@@ -306,6 +359,8 @@ impl TeiHandler {
                 return;
             }
         }
+
+        self.pos.set_half_komi(self.half_komi);
 
         if next >= args.len() || args[next] != "moves" {
             return;
@@ -436,6 +491,7 @@ impl TeiHandler {
                         let candidate = args[i + 1];
                         if let Ok(mv) = candidate.parse() {
                             if moves_to_search.contains(&mv) {
+                                i += 1;
                                 continue;
                             }
 
@@ -523,6 +579,56 @@ impl TeiHandler {
         println!("Static eval (P1-relative): {:+.2}", (static_eval as f64) / 100.0);
     }
 
+    fn handle_bench(&mut self, depth: Option<&str>) {
+        if self.searcher.is_searching() {
+            eprintln!("Warning: Search running (received 'bench')");
+            return;
+        }
+
+        let depth = match depth {
+            Some(depth) => match depth.parse::<i32>() {
+                Ok(depth) => depth.clamp(1, search::MAX_DEPTH),
+                Err(_) => {
+                    eprintln!("Warning: Invalid depth '{}'", depth);
+                    return;
+                }
+            },
+            None => DEFAULT_BENCH_DEPTH,
+        };
+
+        let mut searcher = Searcher::new(16);
+
+        let options = TeiOptions {
+            minimal: true,
+            ..TeiOptions::default()
+        };
+
+        let mut total_nodes = 0;
+        let mut total_time = 0.0;
+
+        for tps in BENCH_POSITIONS {
+            println!("tps: {}", tps);
+
+            let pos = tps.parse().unwrap();
+
+            let start_time = Instant::now();
+            let limits = Limits::new(start_time);
+
+            searcher.start_search(&pos, &[], start_time, limits, depth, &[], &options);
+            searcher.wait();
+
+            total_time += start_time.elapsed().as_secs_f64();
+            total_nodes += searcher.total_nodes();
+
+            println!();
+        }
+
+        let nps = ((total_nodes as f64) / total_time).round() as usize;
+
+        println!("{:.3} seconds", total_time);
+        println!("{} nodes {} nps", total_nodes, nps);
+    }
+
     fn handle_perft(&self, args: &[&str]) {
         if args.is_empty() {
             eprintln!("Missing depth");
@@ -558,5 +664,12 @@ impl TeiHandler {
 
 pub fn run() {
     let mut handler = TeiHandler::new();
+
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("bench") {
+        handler.handle_bench(args.next().as_deref());
+        return;
+    }
+
     handler.run();
 }

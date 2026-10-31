@@ -21,11 +21,61 @@
  * SOFTWARE.
  */
 
+use crate::bitboard::Bitboard;
 use crate::board::Position;
 use crate::history::History;
 use crate::movegen::generate_moves;
+use crate::road::influence;
 use crate::search::Score;
 use crate::takmove::Move;
+
+const SPREAD_ROAD_BONUS: i32 = 1 << 18;
+
+fn spread_road_occ(pos: &Position, mv: Move) -> Bitboard {
+    let src = mv.sq();
+    let dir = mv.dir();
+    let roads = pos.roads(pos.stm());
+    let dropped = mv.pattern().trailing_zeros();
+    let taken = Position::CARRY_LIMIT - dropped;
+    let own_players = pos.players_for(src, pos.stm());
+
+    let mut new_roads_bb = Bitboard::empty();
+    if (own_players >> taken) & 1 != 0 {
+        new_roads_bb.set_sq(src);
+    }
+
+    let mut dirty_bb = src.bb();
+    let mut pattern = mv.pattern() >> dropped;
+    let mut sq = src.shift(dir).unwrap();
+
+    for player_idx in (1..taken).rev() {
+        pattern >>= 1;
+        if pattern & 1 != 0 {
+            dirty_bb.set_sq(sq);
+            if (own_players >> player_idx) & 1 != 0 {
+                new_roads_bb.set_sq(sq);
+            }
+            sq = sq.shift(dir).unwrap();
+        }
+    }
+
+    dirty_bb.set_sq(sq);
+    if roads.has_sq(src) {
+        new_roads_bb.set_sq(sq);
+    }
+
+    (roads & !dirty_bb) | new_roads_bb
+}
+
+fn spread_wins_road(pos: &Position, mv: Move) -> bool {
+    let new_roads = spread_road_occ(pos, mv);
+    let gained = new_roads & !pos.roads(pos.stm());
+
+    let [touches_up, touches_down, touches_left, touches_right] =
+        pos.influence(pos.stm()).map(|bb| !(bb & gained).is_empty());
+
+    ((touches_up && touches_down) || (touches_left && touches_right)) && influence(new_roads).0
+}
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum Stage {
@@ -115,6 +165,8 @@ impl<'a> Movepicker<'a> {
 
             if !mv.is_spread() {
                 score += 100;
+            } else if spread_wins_road(self.pos, *mv) {
+                score += SPREAD_ROAD_BONUS;
             }
 
             // scores have to be less than 2²⁰ to make the movepicking more efficient

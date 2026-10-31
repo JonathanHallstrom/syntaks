@@ -23,7 +23,7 @@
 
 use crate::bitboard::Bitboard;
 use crate::board::Position;
-use crate::core::PieceType;
+use crate::core::{PieceType, Square};
 use crate::eval::static_eval;
 use crate::limit::Limits;
 use crate::movegen::generate_moves;
@@ -33,6 +33,7 @@ use crate::tei::TeiOptions;
 use crate::thread::{PvList, RootMove, SharedContext, TerminalState, ThreadData, set_pv, update_pv};
 use crate::ttable::TtFlag;
 use crate::util::command_channel::{Receiver, Sender, channel};
+use std::io::Write;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -188,6 +189,8 @@ fn search<NT: NodeType>(
         }
     }
 
+    let beta = beta;
+
     thread.inc_nodes();
 
     if !NT::ROOT_NODE {
@@ -208,7 +211,9 @@ fn search<NT: NodeType>(
 
         let influence = pos.influence(pos.stm());
 
-        let criticals = (influence[0] & influence[1]) | (influence[2] & influence[3]);
+        let vert_crit = influence[0] & influence[1];
+        let horz_crit = influence[2] & influence[3];
+        let criticals = vert_crit | horz_crit;
         let open_criticals = criticals & !pos.occ();
 
         if !open_criticals.is_empty() {
@@ -216,9 +221,38 @@ fn search<NT: NodeType>(
             return SCORE_MATE - ply - 1;
         }
 
-        if pos.flats_in_hand(pos.stm()) == 1 && pos.caps_in_hand(pos.stm()) == 0 && pos.fcd(pos.stm()) >= 0 {
-            push_to_pv(!pos.occ());
-            return SCORE_MATE - ply - 1;
+        for (criticals, edges) in [
+            (vert_crit, Bitboard::UPPER_EDGE | Bitboard::LOWER_EDGE),
+            (horz_crit, Bitboard::LEFT_EDGE | Bitboard::RIGHT_EDGE),
+        ] {
+            for sq in criticals & pos.piece_bb(PieceType::Flat) {
+                let neighbors = Bitboard::neighbors(sq);
+                let attackers = neighbors & pos.roads(pos.stm());
+                let edge_bonus = sq.bb() & edges;
+                if (attackers | edge_bonus).popcount() >= 3 {
+                    return SCORE_MATE - ply - 1;
+                }
+            }
+        }
+
+        if pos.flats_in_hand(pos.stm()) > 0
+            && ((pos.flats_in_hand(pos.stm()) == 1 && pos.caps_in_hand(pos.stm()) == 0)
+                || pos.occ().popcount() == Square::COUNT as u32 - 1)
+        {
+            let hfcd = pos.hfcd(pos.stm());
+
+            if hfcd >= -1 {
+                push_to_pv(!pos.occ());
+                return SCORE_MATE - ply - 1;
+            }
+
+            if hfcd == -2 && alpha < 0 {
+                push_to_pv(!pos.occ());
+                alpha = 0;
+                if alpha >= beta {
+                    return alpha;
+                }
+            }
         }
     }
 
@@ -232,7 +266,7 @@ fn search<NT: NodeType>(
         thread.update_seldepth(ply);
     }
 
-    if ply > MAX_DEPTH {
+    if ply >= MAX_DEPTH {
         let static_eval = static_eval(pos);
         let correction = thread.corrhist.correction(pos, &thread.key_history);
         return static_eval + correction;
@@ -334,8 +368,16 @@ fn search<NT: NodeType>(
 
         #[allow(clippy::collapsible_if)]
         if !NT::ROOT_NODE && !is_loss(best_score) {
-            if depth <= 6 && move_count as i32 >= 5 + 2 * depth * depth {
-                break;
+            if depth <= 8 {
+                let losing = static_eval + 250 <= alpha;
+                let limit = (5 + 2 * depth * depth)
+                    * (1 + i32::from(improving))
+                    * (1 + i32::from(!losing))
+                    * (1 + i32::from(NT::PV_NODE))
+                    / 4;
+                if move_count as i32 >= limit {
+                    break;
+                }
             }
         }
 
@@ -385,8 +427,14 @@ fn search<NT: NodeType>(
                 r += 1024 * i32::from(!NT::PV_NODE);
                 r -= thread.history.score(pos, mv, prev_move) / 8;
 
+                let our_influence = new_pos.influence(pos.stm());
+                let threats = (((our_influence[0] & our_influence[1]) | (our_influence[2] & our_influence[3]))
+                    & !new_pos.occ())
+                .popcount() as i32;
+                r -= 1024 * threats.min(2);
+
                 if mv.is_spread() {
-                    let gain = new_pos.fcd(pos.stm()) - pos.fcd(pos.stm());
+                    let gain = (new_pos.hfcd(pos.stm()) - pos.hfcd(pos.stm())) / 2;
                     r += (1 - gain).clamp(0, 3) * 1024;
                 }
 
@@ -546,8 +594,6 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
     thread.key_history.reserve(ctx.key_history.len());
     thread.key_history.extend_from_slice(&ctx.key_history);
 
-    counter.register_thread();
-
     let mut data_stack = vec![PlyData::new(); MAX_DEPTH as usize * 2];
 
     thread.root_depth = 1;
@@ -590,7 +636,7 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
                     break;
                 }
 
-                if thread.is_main_thread() && !thread.shared().options.minimal && ctx.multipv == 1 {
+                if thread.is_main_thread() && !thread.shared().options.minimal && thread.shared().options.multipv == 1 {
                     let time = thread.shared().elapsed();
                     if time >= WIDEN_REPORT_DELAY {
                         let nodes = thread.shared().total_nodes();
@@ -646,18 +692,17 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
     if thread.is_main_thread() {
         counter.unregister_and_wait();
 
-        let time = thread.shared().elapsed();
-        final_report(thread, thread.root_depth, time, ctx.multipv);
+        let best_move = thread.pv_move().mv();
 
         thread.shared = None;
-        counter.complete_search();
+        counter.complete_search(|| final_report(best_move));
     } else {
         thread.shared = None;
         counter.unregister_thread();
     }
 }
 
-fn report_single(thread: &ThreadData, time: f64, nodes: usize, multipv: usize, pv_idx: usize) -> bool {
+fn report_single(thread: &ThreadData, time: f64, nodes: usize, _multipv: usize, pv_idx: usize) -> bool {
     let root_move = &thread.root_moves[pv_idx];
 
     // previous scores are exact, as the depth was completed
@@ -677,42 +722,45 @@ fn report_single(thread: &ThreadData, time: f64, nodes: usize, multipv: usize, p
     let ms = (time * 1000.0) as usize;
     let nps = ((nodes as f64) / time) as usize;
 
-    print!("info ");
+    let mut out = std::io::stdout().lock();
+    write!(out, "info ").unwrap();
 
-    if multipv > 1 {
-        print!("multipv {} ", pv_idx + 1);
+    if thread.shared().options.multipv > 1 {
+        write!(out, "multipv {} ", pv_idx + 1).unwrap();
     }
 
-    print!(
+    write!(
+        out,
         "depth {} seldepth {} time {} nodes {} nps {} score ",
         root_move.searched_depth, root_move.seldepth, ms, nodes, nps
-    );
+    )
+    .unwrap();
 
     if is_decisive(score) {
         if score > 0 {
-            print!("mate {}", (SCORE_MATE - score + 1) / 2);
+            write!(out, "mate {}", (SCORE_MATE - score + 1) / 2).unwrap();
         } else {
-            print!("mate {}", -(SCORE_MATE + score) / 2);
+            write!(out, "mate {}", -(SCORE_MATE + score) / 2).unwrap();
         }
     } else {
-        print!("cp {}", score);
+        write!(out, "cp {}", score).unwrap();
     }
 
     if upper_bound {
         assert!(!lower_bound);
-        print!(" upperbound");
+        write!(out, " upperbound").unwrap();
     }
 
     if lower_bound {
         assert!(!upper_bound);
-        print!(" lowerbound");
+        write!(out, " lowerbound").unwrap();
     }
 
     if is_decisive(score) {
         if score > 0 {
-            print!(" wdl 1000 0 0");
+            write!(out, " wdl 1000 0 0").unwrap();
         } else {
-            print!(" wdl 0 0 1000");
+            write!(out, " wdl 0 0 1000").unwrap();
         }
     } else {
         let p = |cp: Score| {
@@ -724,19 +772,19 @@ fn report_single(thread: &ThreadData, time: f64, nodes: usize, multipv: usize, p
         let l = p(-score);
         let d = 1000 - w - l;
 
-        print!(" wdl {} {} {}", w, d, l);
+        write!(out, " wdl {} {} {}", w, d, l).unwrap();
     }
 
     let hashfull = thread.shared().tt.estimate_full_permille();
-    print!(" hashfull {}", hashfull);
+    write!(out, " hashfull {}", hashfull).unwrap();
 
-    print!(" pv");
+    write!(out, " pv").unwrap();
 
     for mv in root_move.pv.iter() {
-        print!(" {}", mv);
+        write!(out, " {}", mv).unwrap();
     }
 
-    println!();
+    writeln!(out).unwrap();
 
     true
 }
@@ -750,9 +798,8 @@ fn report(thread: &ThreadData, time: f64, multipv: usize) {
     }
 }
 
-fn final_report(thread: &ThreadData, _depth: i32, _time: f64, _multipv: usize) {
-    let mv = thread.pv_move().mv();
-    println!("bestmove {}", mv);
+fn final_report(best_move: Move) {
+    println!("bestmove {}", best_move);
 }
 
 #[derive(Clone)]
@@ -768,13 +815,11 @@ pub struct Searcher {
     shared_ctx: Arc<SharedContext>,
     threads: Vec<JoinHandle<()>>,
     sender: Sender<ThreadCommand>,
-    root_moves: Arc<Vec<RootMove>>,
-    key_history: Arc<Vec<u64>>,
 }
 
 impl Searcher {
-    pub fn new() -> Self {
-        let shared_ctx = Arc::new(SharedContext::new());
+    pub fn new(tt_size_mib: usize) -> Self {
+        let shared_ctx = Arc::new(SharedContext::new(tt_size_mib));
 
         let (mut sender, mut receiver) = channel(1);
 
@@ -797,8 +842,6 @@ impl Searcher {
             shared_ctx,
             threads: vec![thread],
             sender,
-            root_moves: Arc::new(Vec::with_capacity(1024)),
-            key_history: Arc::new(Vec::with_capacity(1024)),
         }
     }
 
@@ -830,29 +873,20 @@ impl Searcher {
         moves_to_search: &[Move],
         options: &TeiOptions,
     ) {
+        let threads = self.threads.len() as u32;
         self.modify_shared_ctx(|ctx| {
-            ctx.init_search(options, start_time, limits);
+            ctx.init_search(options, start_time, limits, threads);
         });
 
-        self.init_root_moves(pos, moves_to_search);
-
-        {
-            let key_history = Arc::get_mut(&mut self.key_history).unwrap();
-
-            key_history.clear();
-            key_history.reserve(new_key_history.len() + MAX_DEPTH as usize);
-
-            key_history.extend_from_slice(new_key_history);
-        }
-
-        let multipv = options.multipv.min(self.root_moves.len());
+        let root_moves = init_root_moves(pos, moves_to_search);
+        let multipv = options.multipv.min(root_moves.len());
 
         let ctx = SearchContext::new(
             max_depth,
             multipv,
             *pos,
-            self.root_moves.clone(),
-            self.key_history.clone(),
+            Arc::new(root_moves),
+            Arc::new(new_key_history.to_vec()),
         );
 
         self.sender
@@ -871,6 +905,11 @@ impl Searcher {
         self.shared_ctx.get_counter().wait();
     }
 
+    #[must_use]
+    pub fn total_nodes(&self) -> usize {
+        self.shared_ctx.total_nodes()
+    }
+
     fn kill_threads(&mut self) {
         self.stop();
         if !self.threads.is_empty() {
@@ -883,7 +922,9 @@ impl Searcher {
     where
         F: Fn(&mut SharedContext),
     {
-        let ctx = Arc::get_mut(&mut self.shared_ctx).unwrap();
+        debug_assert!(!self.is_searching());
+        let ctx =
+            Arc::get_mut(&mut self.shared_ctx).expect("shared search context still referenced by a search thread");
         func(ctx);
     }
 
@@ -935,35 +976,24 @@ impl Searcher {
 
         self.sender.send(ThreadCommand::Ping);
     }
+}
 
-    fn init_root_moves(&mut self, root_pos: &Position, moves_to_search: &[Move]) {
-        let root_moves = Arc::get_mut(&mut self.root_moves).unwrap();
-
-        root_moves.clear();
-
-        if !moves_to_search.is_empty() {
-            print!("info string searchmoves:");
-            for &mv in moves_to_search {
-                assert!(root_pos.is_legal(mv));
-                print!(" {}", mv);
-                let root_move = RootMove::new(mv);
-                root_moves.push(root_move);
-            }
-            println!();
-            return;
+fn init_root_moves(root_pos: &Position, moves_to_search: &[Move]) -> Vec<RootMove> {
+    if !moves_to_search.is_empty() {
+        print!("info string searchmoves:");
+        for &mv in moves_to_search {
+            assert!(root_pos.is_legal(mv));
+            print!(" {}", mv);
         }
+        println!();
 
-        let mut new_root_moves = Vec::with_capacity(1024);
-        generate_moves(&mut new_root_moves, root_pos);
-
-        root_moves.clear();
-        root_moves.reserve(new_root_moves.len());
-
-        for mv in new_root_moves {
-            let root_move = RootMove::new(mv);
-            root_moves.push(root_move);
-        }
+        return moves_to_search.iter().map(|&mv| RootMove::new(mv)).collect();
     }
+
+    let mut moves = Vec::with_capacity(1024);
+    generate_moves(&mut moves, root_pos);
+
+    moves.iter().map(|&mv| RootMove::new(mv)).collect()
 }
 
 impl Drop for Searcher {

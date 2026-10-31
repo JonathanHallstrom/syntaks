@@ -25,8 +25,13 @@ use crate::bitboard::Bitboard;
 use std::arch::x86_64::*;
 
 #[must_use]
-#[target_feature(enable = "sse4.2")]
 pub(super) fn influence(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
+    unsafe { influence_sse42(road_occ, edges) }
+}
+
+#[must_use]
+#[target_feature(enable = "sse4.2")]
+fn influence_sse42(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
     let mut masks_ul = _mm_set_epi64x(edges[2].raw() as i64, edges[0].raw() as i64);
     let mut masks_dr = _mm_set_epi64x(edges[3].raw() as i64, edges[1].raw() as i64);
 
@@ -44,7 +49,7 @@ pub(super) fn influence(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
         let next_masks_r = _mm_andnot_si128(right_edge, _mm_srli_epi64::<1>(masks));
         let next_masks_lr = _mm_or_si128(next_masks_l, next_masks_r);
 
-        _mm_or_si128(next_masks_ud, next_masks_lr)
+        _mm_or_si128(masks, _mm_or_si128(next_masks_ud, next_masks_lr))
     };
 
     let mut influence_masks_ul = calc_next_masks(masks_ul);
@@ -81,8 +86,17 @@ pub(super) fn influence(road_occ: Bitboard, edges: &mut [Bitboard; 4]) -> bool {
         }
     };
 
-    let edges_ul = unsafe { std::mem::transmute::<__m128i, [Bitboard; 2]>(influence_masks_ul) };
-    let edges_dr = unsafe { std::mem::transmute::<__m128i, [Bitboard; 2]>(influence_masks_dr) };
+    influence_masks_ul = _mm_or_si128(
+        influence_masks_ul,
+        _mm_set_epi64x(Bitboard::LEFT_EDGE.raw() as i64, Bitboard::UPPER_EDGE.raw() as i64),
+    );
+    influence_masks_dr = _mm_or_si128(
+        influence_masks_dr,
+        _mm_set_epi64x(Bitboard::RIGHT_EDGE.raw() as i64, Bitboard::LOWER_EDGE.raw() as i64),
+    );
+
+    let edges_ul = unsafe { std::mem::transmute::<__m128i, [u64; 2]>(influence_masks_ul) }.map(Bitboard::from_raw);
+    let edges_dr = unsafe { std::mem::transmute::<__m128i, [u64; 2]>(influence_masks_dr) }.map(Bitboard::from_raw);
 
     *edges = [edges_ul[0], edges_dr[0], edges_ul[1], edges_dr[1]];
 

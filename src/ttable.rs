@@ -23,12 +23,24 @@
 
 use crate::search::{Score, is_loss, is_win};
 use crate::takmove::Move;
+#[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const DEFAULT_TT_SIZE_MIB: usize = 64;
 pub const MAX_TT_SIZE_MIB: usize = 131072;
+
+const ENTRIES_PER_CLUSTER: usize = 4;
+
+const FLAG_BITS: u32 = 2;
+const FLAG_MASK: u8 = (1 << FLAG_BITS) - 1;
+const AGE_BITS: u32 = 8 - FLAG_BITS;
+const AGE_CYCLE: u8 = 1 << AGE_BITS;
+const AGE_MASK: u8 = AGE_CYCLE - 1;
+
+const AGE_PENALTY: i32 = 4;
+const EMPTY_PENALTY: i32 = 1024;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -45,7 +57,41 @@ struct Entry {
     score: i16,
     mv: Option<Move>,
     depth: u8,
-    flag: Option<TtFlag>,
+    age_flag: AgeFlag,
+}
+
+const _: () = assert!(size_of::<Entry>() == 8);
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+struct AgeFlag {
+    raw: u8,
+}
+
+impl AgeFlag {
+    #[must_use]
+    fn new(age: u8, flag: Option<TtFlag>) -> Self {
+        let flag = flag.map(|flag| flag as u8).unwrap_or(0);
+        Self {
+            raw: (age << FLAG_BITS) | flag,
+        }
+    }
+
+    #[must_use]
+    fn age(self) -> u8 {
+        self.raw >> FLAG_BITS
+    }
+
+    #[must_use]
+    fn flag(self) -> Option<TtFlag> {
+        match self.raw & FLAG_MASK {
+            0 => None,
+            1 => Some(TtFlag::UpperBound),
+            2 => Some(TtFlag::LowerBound),
+            3 => Some(TtFlag::Exact),
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -66,6 +112,25 @@ impl EntryStorage {
     }
 }
 
+#[derive(Debug, Default)]
+#[repr(C, align(32))]
+struct Cluster {
+    entries: [EntryStorage; ENTRIES_PER_CLUSTER],
+}
+
+impl Cluster {
+    #[must_use]
+    fn find(&self, entry_key: u16) -> Option<(usize, Entry)> {
+        self.entries
+            .iter()
+            .map(EntryStorage::load)
+            .enumerate()
+            .find(|(_, entry)| entry.key == entry_key)
+    }
+}
+
+const _: () = assert!(size_of::<Cluster>() == 32);
+
 #[derive(Copy, Clone, Debug, Default)]
 pub struct ProbedEntry {
     pub score: Score,
@@ -75,8 +140,8 @@ pub struct ProbedEntry {
 }
 
 #[must_use]
-fn calc_entry_count(size_mib: usize) -> usize {
-    size_mib * 1024 * 1024 / size_of::<Entry>()
+fn calc_cluster_count(size_mib: usize) -> usize {
+    size_mib * 1024 * 1024 / size_of::<Cluster>()
 }
 
 #[must_use]
@@ -133,7 +198,8 @@ unsafe fn clear_threaded<T: Send>(ptr: *mut MaybeUninit<T>, len: usize, threads:
 }
 
 pub struct TranspositionTable {
-    entries: Vec<EntryStorage>,
+    clusters: Vec<Cluster>,
+    age: u8,
 }
 
 impl TranspositionTable {
@@ -142,7 +208,8 @@ impl TranspositionTable {
         assert!(size_mib > 0);
 
         let mut result = Self {
-            entries: Vec::default(),
+            clusters: Vec::default(),
+            age: 0,
         };
 
         result.resize(size_mib, 1);
@@ -155,27 +222,41 @@ impl TranspositionTable {
         assert!(threads > 0);
 
         // ensure the entire old TT is deallocated
-        self.entries = Vec::new();
+        self.clusters = Vec::new();
 
-        let entry_count = calc_entry_count(size_mib);
-        self.entries = Vec::with_capacity(entry_count);
+        let cluster_count = calc_cluster_count(size_mib);
+        self.clusters = Vec::with_capacity(cluster_count);
 
         unsafe {
-            //SAFETY: all-zeroes is a valid bitpattern for EntryStorage, and the range is fully in bounds
-            clear_threaded::<EntryStorage>(self.entries.as_mut_ptr().cast(), entry_count, threads);
+            //SAFETY: all-zeroes is a valid bitpattern for Cluster, and the range is fully in bounds
+            clear_threaded::<Cluster>(self.clusters.as_mut_ptr().cast(), cluster_count, threads);
             //SAFETY: we just initialised these values
-            self.entries.set_len(entry_count);
+            self.clusters.set_len(cluster_count);
         }
+
+        self.age = 0;
+    }
+
+    pub fn age(&mut self) {
+        self.age = (self.age + 1) & AGE_MASK;
     }
 
     pub fn prefetch(&self, key: u64) {
-        #[cfg(target_arch = "x86_64")]
-        {
-            let idx = self.calc_index(key);
-            //SAFETY: calc_index() cannot return an out-of-bounds index
-            let entry = unsafe { self.entries.get_unchecked(idx) };
-            let ptr = std::ptr::from_ref(entry).cast();
-            unsafe { _mm_prefetch(ptr, _MM_HINT_T0) };
+        let idx = self.calc_index(key);
+        //SAFETY: calc_index() cannot return an out-of-bounds index
+        let cluster = unsafe { self.clusters.get_unchecked(idx) };
+        let ptr = std::ptr::from_ref(cluster);
+
+        cfg_select! {
+            target_arch = "x86_64" => unsafe {
+                _mm_prefetch(ptr.cast(), _MM_HINT_T0);
+            },
+            target_arch = "aarch64" => unsafe {
+                std::arch::asm!("prfm pldl1keep, [{0}]", in(reg) ptr, options(nostack, preserves_flags, readonly));
+            },
+            _ => {
+                _ = ptr;
+            }
         }
     }
 
@@ -187,55 +268,95 @@ impl TranspositionTable {
         let mut probed = Default::default();
 
         //SAFETY: calc_index() cannot return an out-of-bounds index
-        let entry = unsafe { self.entries.get_unchecked(idx) }.load();
+        let cluster = unsafe { self.clusters.get_unchecked(idx) };
 
-        if entry.key != entry_key {
+        let Some((_, entry)) = cluster.find(entry_key) else {
+            return (false, probed);
+        };
+
+        if entry.age_flag.flag().is_none() {
             return (false, probed);
         }
 
         probed.score = score_from_tt(entry.score, ply);
         probed.mv = entry.mv;
         probed.depth = entry.depth as i32;
-        probed.flag = entry.flag;
+        probed.flag = entry.age_flag.flag();
 
         (true, probed)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn store(&self, key: u64, score: Score, mv: Option<Move>, depth: i32, ply: i32, flag: TtFlag) {
         let idx = self.calc_index(key);
         let entry_key = pack_entry_key(key);
 
         //SAFETY: calc_index() cannot return an out-of-bounds index
-        let storage = unsafe { self.entries.get_unchecked(idx) };
+        let cluster = unsafe { self.clusters.get_unchecked(idx) };
 
-        let mut entry = storage.load();
+        let slot = self.write_slot(cluster, entry_key);
 
-        if mv.is_some() || entry.key != entry_key {
-            entry.mv = mv;
+        let existing_entry = cluster.entries[slot].load();
+        let existing_key = existing_entry.key;
+
+        let replace = flag == TtFlag::Exact
+            || entry_key != existing_key
+            || existing_entry.age_flag.age() != self.age
+            || depth + 4 > existing_entry.depth as i32;
+
+        if !replace {
+            return;
         }
 
-        entry.key = entry_key;
-        entry.score = score_to_tt(score, ply);
-        entry.depth = depth as u8;
-        entry.flag = Some(flag);
+        let mv = if existing_key == entry_key {
+            mv.or_else(|| existing_entry.mv)
+        } else {
+            mv
+        };
 
-        storage.store(entry);
+        cluster.entries[slot].store(Entry {
+            key: entry_key,
+            score: score_to_tt(score, ply),
+            mv,
+            depth: depth as u8,
+            age_flag: AgeFlag::new(self.age, Some(flag)),
+        });
+    }
+
+    #[must_use]
+    fn write_slot(&self, cluster: &Cluster, entry_key: u16) -> usize {
+        if let Some((slot, _)) = cluster.find(entry_key) {
+            return slot;
+        }
+
+        let value = |storage: &EntryStorage| {
+            let entry = storage.load();
+            entry.depth as i32
+                - AGE_PENALTY * self.relative_age(entry.age_flag)
+                - EMPTY_PENALTY * i32::from(entry.age_flag.flag().is_none())
+        };
+
+        (0..ENTRIES_PER_CLUSTER)
+            .min_by_key(|&slot| value(&cluster.entries[slot]))
+            .unwrap()
     }
 
     pub fn clear(&mut self, threads: usize) {
         assert!(threads > 0);
 
-        //SAFETY: all-zeroes is a valid bitpattern for EntryStorage, and the range is fully in bounds
-        unsafe { clear_threaded::<EntryStorage>(self.entries.as_mut_ptr().cast(), self.entries.len(), threads) };
+        //SAFETY: all-zeroes is a valid bitpattern for Cluster, and the range is fully in bounds
+        unsafe { clear_threaded::<Cluster>(self.clusters.as_mut_ptr().cast(), self.clusters.len(), threads) };
+
+        self.age = 0;
     }
 
     #[must_use]
     pub fn estimate_full_permille(&self) -> usize {
         let mut filled = 0;
 
-        for storage in self.entries[0..1000].iter() {
-            let entry = storage.load();
-            if entry.flag.is_some() {
+        for i in 0..1000 {
+            let entry = self.clusters[i / ENTRIES_PER_CLUSTER].entries[i % ENTRIES_PER_CLUSTER].load();
+            if entry.age_flag.flag().is_some() && entry.age_flag.age() == self.age {
                 filled += 1;
             }
         }
@@ -244,7 +365,12 @@ impl TranspositionTable {
     }
 
     #[must_use]
+    fn relative_age(&self, age_flag: AgeFlag) -> i32 {
+        ((AGE_CYCLE + self.age - age_flag.age()) & AGE_MASK) as i32
+    }
+
+    #[must_use]
     fn calc_index(&self, key: u64) -> usize {
-        ((key as u128 * self.entries.len() as u128) >> 64) as usize
+        ((key as u128 * self.clusters.len() as u128) >> 64) as usize
     }
 }

@@ -69,10 +69,9 @@ const CAP_PSQT: [Score; Square::COUNT] = [
 ];
 
 #[must_use]
-fn static_eval_player(pos: &Position, player: Player, komi: u32) -> Score {
+fn static_eval_player(pos: &Position, player: Player, half_komi: i32) -> Score {
     let flat_bb = pos.player_piece_bb(PieceType::Flat.with_player(player));
-    let flats = (flat_bb.popcount() + komi) as Score;
-    let flats = flats * 75;
+    let flats = flat_bb.popcount() as Score * 75 + half_komi * 75 / 2;
 
     let flats_in_hand = pos.flats_in_hand(player) as Score;
     let flats_in_hand = flats_in_hand * -13;
@@ -148,7 +147,7 @@ fn static_eval_player(pos: &Position, player: Player, komi: u32) -> Score {
 #[must_use]
 pub fn static_eval(pos: &Position) -> Score {
     let p1_score = static_eval_player(pos, Player::P1, 0);
-    let p2_score = static_eval_player(pos, Player::P2, Position::KOMI);
+    let p2_score = static_eval_player(pos, Player::P2, i32::from(pos.half_komi()));
 
     let p1_flat_bb = pos.player_piece_bb(Piece::P1Flat);
     let p2_flat_bb = pos.player_piece_bb(Piece::P2Flat);

@@ -30,7 +30,9 @@ use crate::takmove::Move;
 use std::cmp::Ordering;
 use std::str::FromStr;
 use std::sync::atomic;
-use std::sync::atomic::AtomicU8;
+use std::sync::atomic::{AtomicBool, AtomicU8};
+
+pub static DOUBLE_BLACK_STACK: AtomicBool = AtomicBool::new(false);
 
 pub const DEFAULT_FLATS: u8 = 30;
 pub const MIN_FLATS: u8 = 2;
@@ -222,11 +224,14 @@ pub struct Position {
     player_key: u64,
     roads: [bool; Player::COUNT],
     influence: [[Bitboard; 4]; Player::COUNT],
+    half_komi: i8,
 }
 
 impl Position {
-    pub const CARRY_LIMIT: u8 = 6;
-    pub const KOMI: u32 = 2;
+    pub const CARRY_LIMIT: u32 = 6;
+    pub const DEFAULT_HALF_KOMI: i8 = 4;
+    pub const MIN_HALF_KOMI: i8 = -7;
+    pub const MAX_HALF_KOMI: i8 = 7;
 
     #[must_use]
     pub fn startpos() -> Self {
@@ -240,8 +245,18 @@ impl Position {
             ply: 0,
             player_key: 0,
             roads: Default::default(),
-            influence: Default::default(),
+            influence: [Bitboard::EDGES; Player::COUNT],
+            half_komi: Self::DEFAULT_HALF_KOMI,
         }
+    }
+
+    pub fn set_half_komi(&mut self, half_komi: i8) {
+        self.half_komi = half_komi;
+    }
+
+    #[must_use]
+    pub fn half_komi(&self) -> i8 {
+        self.half_komi
     }
 
     pub fn from_tps_parts(parts: &[&str]) -> Result<Self, TpsError> {
@@ -349,6 +364,14 @@ impl Position {
     }
 
     #[must_use]
+    #[inline(always)]
+    pub fn players_for(&self, sq: Square, player: Player) -> u64 {
+        let players = self.stacks.players(sq);
+        let players = if player == Player::P1 { !players } else { players };
+        players & ((1u64 << self.stacks.height(sq)) - 1)
+    }
+
+    #[must_use]
     pub fn player_bb(&self, player: Player) -> Bitboard {
         self.players[player.idx()]
     }
@@ -449,10 +472,10 @@ impl Position {
     }
 
     #[must_use]
-    pub fn fcd(&self, player: Player) -> i32 {
-        let p1_advantage = self.player_piece_bb(Piece::P1Flat).popcount() as i32
-            - self.player_piece_bb(Piece::P2Flat).popcount() as i32
-            - Self::KOMI as i32;
+    pub fn hfcd(&self, player: Player) -> i32 {
+        let p1_advantage = 2 * self.player_piece_bb(Piece::P1Flat).popcount() as i32
+            - 2 * self.player_piece_bb(Piece::P2Flat).popcount() as i32
+            - i32::from(self.half_komi);
         p1_advantage * player.sign()
     }
 
@@ -462,10 +485,7 @@ impl Position {
             return FlatCountOutcome::None;
         }
 
-        let p1_flats = self.player_piece_bb(Piece::P1Flat).popcount();
-        let p2_flats = self.player_piece_bb(Piece::P2Flat).popcount() + Self::KOMI;
-
-        match p1_flats.cmp(&p2_flats) {
+        match self.hfcd(Player::P1).cmp(&0) {
             Ordering::Less => FlatCountOutcome::Win(Player::P2),
             Ordering::Equal => FlatCountOutcome::Draw,
             Ordering::Greater => FlatCountOutcome::Win(Player::P1),
@@ -549,7 +569,7 @@ impl Position {
             let dir = mv.dir();
 
             let dropped = pattern.trailing_zeros();
-            let taken = 6 - dropped;
+            let taken = Self::CARRY_LIMIT - dropped;
 
             let mut pattern = pattern >> dropped;
             let (players, top, new_top_player) = new_pos.stacks.take(mv.sq(), taken as u8);
@@ -640,9 +660,18 @@ impl Position {
             new_pos.players[dropped_player.idx()].set_sq(mv.sq());
             new_pos.pieces[mv.pt().idx()].set_sq(mv.sq());
 
+            let dropped_count =
+                if self.ply() < 2 && dropped_player == Player::P2 && DOUBLE_BLACK_STACK.load(atomic::Ordering::Relaxed)
+                {
+                    new_pos.stacks.push(mv.sq(), mv.pt(), dropped_player);
+                    2
+                } else {
+                    1
+                };
+
             match mv.pt() {
-                PieceType::Capstone => new_pos.caps_in_hand[dropped_player.idx()] -= 1,
-                _ => new_pos.flats_in_hand[dropped_player.idx()] -= 1,
+                PieceType::Capstone => new_pos.caps_in_hand[dropped_player.idx()] -= dropped_count,
+                _ => new_pos.flats_in_hand[dropped_player.idx()] -= dropped_count,
             }
 
             new_pos.update_influence(dropped_player);

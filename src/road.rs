@@ -21,45 +21,37 @@
  * SOFTWARE.
  */
 
-#[cfg(target_feature = "avx2")]
-mod avx2;
-
-#[cfg(all(not(target_feature = "avx2"), target_feature = "sse4.2"))]
-mod sse;
+cfg_select! {
+    target_feature = "avx512f" => {
+        mod avx512;
+        use avx512::influence as influence_impl;
+    }
+    target_feature = "avx2" => {
+        mod avx2;
+        use avx2::influence as influence_impl;
+    }
+    target_feature = "sse4.2" => {
+        mod sse;
+        use sse::influence as influence_impl;
+    }
+    _ => {
+        mod scalar;
+        use scalar::influence as influence_impl;
+    }
+}
 
 use crate::bitboard::Bitboard;
 
 #[must_use]
 pub fn influence(road_occ: Bitboard) -> (bool, [Bitboard; 4]) {
-    let upper_edge = Bitboard::UPPER_EDGE;
-    let lower_edge = Bitboard::LOWER_EDGE;
-    let left_edge = Bitboard::LEFT_EDGE;
-    let right_edge = Bitboard::RIGHT_EDGE;
-
-    let mut edges = [
-        road_occ & upper_edge,
-        road_occ & lower_edge,
-        road_occ & left_edge,
-        road_occ & right_edge,
-    ];
+    let mut edges = Bitboard::EDGES.map(|edge| road_occ & edge);
 
     edges[0] |= edges[0] >> 6 & road_occ;
     edges[1] |= edges[1] << 6 & road_occ;
     edges[2] |= edges[2] << 1 & road_occ;
     edges[3] |= edges[3] >> 1 & road_occ;
 
-    let result;
-
-    #[cfg(target_feature = "avx2")]
-    {
-        //SAFETY: self-explanatory
-        result = unsafe { avx2::influence(road_occ, &mut edges) };
-    }
-
-    #[cfg(all(not(target_feature = "avx2"), target_feature = "sse4.2"))]
-    {
-        result = unsafe { sse::influence(road_occ, &mut edges) };
-    }
+    let result = influence_impl(road_occ, &mut edges);
 
     (result, edges)
 }
