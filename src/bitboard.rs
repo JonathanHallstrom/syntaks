@@ -87,6 +87,11 @@ impl Bitboard {
     }
 
     #[must_use]
+    pub const fn is_full(self) -> bool {
+        self.raw & Self::MASK == Self::MASK
+    }
+
+    #[must_use]
     pub const fn has_sq(self, sq: Square) -> bool {
         (self.raw & sq.bb().raw) != 0
     }

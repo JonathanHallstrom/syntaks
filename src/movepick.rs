@@ -42,6 +42,7 @@ tunable!(KILLER_MOVE_BONUS: i32 = 16442; range(-32768, 32768));
 struct SpreadInfo {
     roads: Bitboard,
     flat_delta: i32,
+    fills_board: bool,
 }
 
 fn spread_ordering_info(pos: &Position, mv: Move) -> SpreadInfo {
@@ -95,6 +96,7 @@ fn spread_ordering_info(pos: &Position, mv: Move) -> SpreadInfo {
     SpreadInfo {
         roads: (roads & !dirty_bb) | new_roads_bb,
         flat_delta: flats_after - flats_before,
+        fills_board: (pos.occ() | dirty_bb).is_full() && u32::from(pos.height(src)) > taken,
     }
 }
 
@@ -105,6 +107,10 @@ fn spread_wins_road(pos: &Position, info: &SpreadInfo) -> bool {
         pos.influence(pos.stm()).map(|bb| !(bb & gained).is_empty());
 
     ((touches_up && touches_down) || (touches_left && touches_right)) && influence(info.roads).0
+}
+
+fn spread_wins_flats(pos: &Position, info: &SpreadInfo) -> bool {
+    info.fills_board && pos.hfcd(pos.stm()) + 2 * info.flat_delta > 0
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -194,7 +200,7 @@ impl<'a> Movepicker<'a> {
                 score -= PLACEMENT_PENALTY;
             } else {
                 let info = spread_ordering_info(self.pos, mv);
-                if spread_wins_road(self.pos, &info) {
+                if spread_wins_road(self.pos, &info) || spread_wins_flats(self.pos, &info) {
                     score += SPREAD_ROAD_BONUS;
                 }
                 score += SPREAD_FLAT_GAIN * info.flat_delta;

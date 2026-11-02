@@ -213,19 +213,19 @@ fn search<NT: NodeType>(
             }
         }
 
-        if pos.flats_in_hand(pos.stm()) > 0
-            && ((pos.flats_in_hand(pos.stm()) == 1 && pos.caps_in_hand(pos.stm()) == 0)
-                || pos.occ().popcount() == Square::COUNT as u32 - 1)
-        {
-            let hfcd = pos.hfcd(pos.stm());
+        let flats_in_hand = pos.flats_in_hand(pos.stm());
+        let pieces_in_hand = flats_in_hand + pos.caps_in_hand(pos.stm());
 
-            if hfcd >= -1 {
+        if pieces_in_hand == 1 || (pieces_in_hand > 0 && pos.occ().popcount() == Square::COUNT as u32 - 1) {
+            let hfcd = pos.hfcd(pos.stm()) + if flats_in_hand > 0 { 2 } else { 0 };
+
+            if hfcd > 0 {
                 thread.inc_nodes();
                 push_to_pv(!pos.occ());
                 return win_in(ply + 1);
             }
 
-            if hfcd == -2 && alpha < 0 {
+            if hfcd == 0 && alpha < 0 {
                 push_to_pv(!pos.occ());
                 alpha = 0;
                 if alpha >= beta {
