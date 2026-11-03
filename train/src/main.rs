@@ -308,6 +308,24 @@ fn main() {
         save_rate: SUPERBATCHES_COMBINED,
     };
 
+    let schedule_finetune = TrainingSchedule {
+        net_id: format!("{}_stage3", id),
+        eval_scale: SCALE as f32,
+        steps: TrainingSteps {
+            batch_size: 16_384,
+            batches_per_superbatch: 6104,
+            start_superbatch: 1,
+            end_superbatch: SUPERBATCHES_COMBINED,
+        },
+        wdl_scheduler: wdl::ConstantWDL { value: 1.0 },
+        lr_scheduler: lr::CosineDecayLR {
+            initial_lr: 1e-4,
+            final_lr: 1e-6,
+            final_superbatch: SUPERBATCHES_COMBINED,
+        },
+        save_rate: SUPERBATCHES_COMBINED,
+    };
+
     let settings = LocalSettings {
         threads: MAP_THREADS,
         test_set: None,
@@ -329,6 +347,15 @@ fn main() {
 
     trainer.run(
         &schedule_combined,
+        &settings,
+        &MixReader::new(
+            TakReader::new(two_komi.clone(), SHUFFLE_BUFFER, LOAD_THREADS, filter),
+            TakReader::new(other.clone(), SHUFFLE_BUFFER, LOAD_THREADS, filter),
+        ),
+    );
+
+    trainer.run(
+        &schedule_finetune,
         &settings,
         &MixReader::new(
             TakReader::new(two_komi, SHUFFLE_BUFFER, LOAD_THREADS, filter),
