@@ -435,6 +435,9 @@ fn search<NT: NodeType>(
                     & !new_pos.occ())
                 .popcount() as i32;
                 r -= 1024 * threats.min(2);
+                if threats > 0 {
+                    r = r.min(1024);
+                }
 
                 if mv.is_spread() {
                     let gain = (new_pos.hfcd(pos.stm()) - pos.hfcd(pos.stm())) / 2;
