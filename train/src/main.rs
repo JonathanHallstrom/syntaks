@@ -19,7 +19,7 @@ use syntaks::format::GameResult;
 use syntaks::position::Position;
 use syntaks::takmove::Move;
 
-const L1: usize = 1280;
+const L1: usize = 2560;
 const L2: usize = 32;
 const L3: usize = 32;
 const SCALE: i32 = 400;
@@ -102,9 +102,10 @@ fn merge_fac(weights: Vec<f32>, inner: usize) -> Vec<f32> {
 fn dpbusd_layout(weights: Vec<f32>) -> Vec<f32> {
     let mut out = vec![0.0; weights.len()];
     for ob in 0..OUTPUT_BUCKETS {
-        for neuron in 0..L1 {
+        for neuron in 0..L1 / 2 {
             for j in 0..L2 {
-                out[ob * L1 * L2 + neuron / 4 * 4 * L2 + j * 4 + neuron % 4] = weights[(ob * L1 + neuron) * L2 + j];
+                out[ob * L1 / 2 * L2 + neuron / 4 * 4 * L2 + j * 4 + neuron % 4] =
+                    weights[(ob * L1 / 2 + neuron) * L2 + j];
             }
         }
     }
@@ -177,7 +178,6 @@ fn main() {
     assert!(!other.is_empty());
 
     let mut trainer = ValueTrainerBuilder::default()
-        .dual_perspective()
         .optimiser(AdamW)
         .inputs(TakTopRelativeStacks)
         .output_buckets(KomiReserveBuckets)
@@ -226,19 +226,18 @@ fn main() {
                 .quantise::<i32>(Q.pow(4)),
         ])
         .loss_fn(|output, target| output.sigmoid().squared_error(target))
-        .build(|builder, stm_inputs, ntm_inputs, output_buckets| {
+        .build(|builder, stm_inputs, output_buckets| {
             let l0 = builder.new_affine("l0", TakTopRelativeStacks::NUM_INPUTS, L1);
             let l1 = builder
-                .new_affine("l1", L1, (OUTPUT_BUCKETS + 1) * L2)
+                .new_affine("l1", L1 / 2, (OUTPUT_BUCKETS + 1) * L2)
                 .with_precision(MatmulPrecision::Half);
             let l2 = builder.new_affine("l2", L2, (OUTPUT_BUCKETS + 1) * L3);
             let l3 = builder.new_affine("l3", L3, OUTPUT_BUCKETS + 1);
 
             let ft = |input, start, end| l0.slice(start, end).forward(input).crelu();
             let stm_hidden = ft(stm_inputs, 0, L1 / 2) * ft(stm_inputs, L1 / 2, L1);
-            let ntm_hidden = ft(ntm_inputs, 0, L1 / 2) * ft(ntm_inputs, L1 / 2, L1);
 
-            let hl1 = stm_hidden.concat(ntm_hidden);
+            let hl1 = stm_hidden;
             let l1_out = l1.slice(0, OUTPUT_BUCKETS * L2).forward(hl1).select(output_buckets)
                 + l1.slice(OUTPUT_BUCKETS * L2, (OUTPUT_BUCKETS + 1) * L2).forward(hl1);
             let skip = l1_out.slice_rows(0, 1);
