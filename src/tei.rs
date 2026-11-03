@@ -392,6 +392,7 @@ impl TeiHandler {
 
         let mut limits = Limits::new(start_time);
         let mut max_depth = None;
+        let mut max_mate = None;
 
         let mut wtime = None;
         let mut btime = None;
@@ -420,6 +421,24 @@ impl TeiHandler {
                         max_depth = Some(depth);
                     } else {
                         eprintln!("Invalid depth '{}'", args[i]);
+                        return;
+                    }
+                }
+                "mate" => {
+                    i += 1;
+                    if i >= args.len() {
+                        eprintln!("Missing mate length");
+                        return;
+                    }
+
+                    if let Ok(moves) = args[i].parse::<i32>() {
+                        if max_mate.is_some() {
+                            eprintln!("Duplicate mate limits");
+                            return;
+                        }
+                        max_mate = Some(moves.max(1));
+                    } else {
+                        eprintln!("Invalid mate length '{}'", args[i]);
                         return;
                     }
                 }
@@ -535,6 +554,7 @@ impl TeiHandler {
             start_time,
             limits,
             max_depth,
+            max_mate,
             &moves_to_search,
             &self.options,
         );
@@ -614,7 +634,7 @@ impl TeiHandler {
             let start_time = Instant::now();
             let limits = Limits::new(start_time);
 
-            searcher.start_search(&pos, &[], start_time, limits, depth, &[], &options);
+            searcher.start_search(&pos, &[], start_time, limits, depth, None, &[], &options);
             searcher.wait();
 
             total_time += start_time.elapsed().as_secs_f64();

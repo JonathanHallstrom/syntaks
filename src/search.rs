@@ -71,6 +71,7 @@ const CURRMOVE_REPORT_DELAY: f64 = 2.5;
 #[derive(Clone, Debug)]
 pub struct SearchContext {
     max_depth: i32,
+    max_mate: Option<i32>,
     multipv: usize,
     root_pos: Position,
     root_moves: Arc<Vec<RootMove>>,
@@ -80,6 +81,7 @@ pub struct SearchContext {
 impl SearchContext {
     fn new(
         max_depth: i32,
+        max_mate: Option<i32>,
         multipv: usize,
         root_pos: Position,
         root_moves: Arc<Vec<RootMove>>,
@@ -87,6 +89,7 @@ impl SearchContext {
     ) -> Self {
         Self {
             max_depth,
+            max_mate,
             multipv,
             root_pos,
             root_moves,
@@ -440,6 +443,10 @@ fn search<NT: NodeType>(
 
                 r /= 1024;
 
+                if NT::ROOT_NODE && best_score.abs() < 2000 {
+                    r = r.min(depth.isqrt());
+                }
+
                 let reduced = (new_depth - r).max(1).min(new_depth);
 
                 score = -search::<NonPvNode>(thread, child_data, &new_pos, reduced, ply + 1, -alpha - 1, -alpha, true);
@@ -660,6 +667,9 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
                 if last_pv
                     && !thread.shared().has_stopped()
                     && (thread.root_depth >= ctx.max_depth
+                        || ctx.max_mate.is_some_and(|n| {
+                            is_win(thread.pv_move().score) && SCORE_MATE - thread.pv_move().score <= 2 * n - 1
+                        })
                         || thread
                             .shared()
                             .check_stop_soft(thread.nodes(), thread.pv_move().nodes as f64 / (thread.nodes() as f64)))
@@ -870,6 +880,7 @@ impl Searcher {
         start_time: Instant,
         limits: Limits,
         max_depth: i32,
+        max_mate: Option<i32>,
         moves_to_search: &[Move],
         options: &TeiOptions,
     ) {
@@ -883,6 +894,7 @@ impl Searcher {
 
         let ctx = SearchContext::new(
             max_depth,
+            max_mate,
             multipv,
             *pos,
             Arc::new(root_moves),
