@@ -368,7 +368,7 @@ fn search<NT: NodeType>(
         }
 
         if depth <= 1 && worsening && static_eval + 500 <= alpha {
-            return static_eval;
+            return account_for_spread(static_eval, pos, ply, beta);
         }
 
         tunable!(RFP_DEPTH_SCALE: i32 = 92; range(0, 256));
