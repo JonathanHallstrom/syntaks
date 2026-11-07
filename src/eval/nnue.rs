@@ -62,6 +62,17 @@ pub const L1_SIZE: usize = 1280;
 pub const L2_SIZE: usize = 32;
 pub const L3_SIZE: usize = 32;
 
+pub(super) const PACKUS_LANE: usize = 8;
+const PACKUS_WIDTH: usize = 32;
+
+#[inline]
+pub const fn packus_position(neuron: usize) -> usize {
+    let chunk = neuron % (2 * PACKUS_WIDTH);
+    let lane = chunk / (2 * PACKUS_LANE);
+    let half = chunk % (2 * PACKUS_LANE) / PACKUS_LANE;
+    neuron - chunk + half * PACKUS_WIDTH + lane * PACKUS_LANE + chunk % PACKUS_LANE
+}
+
 pub const L1_PAIR_COUNT: usize = L1_SIZE / 2;
 pub const L2_PAIR_COUNT: usize = L2_SIZE / 2;
 
@@ -114,17 +125,20 @@ pub(super) fn evaluate_once(pos: &Position) -> i32 {
     forward(&acc, pos)
 }
 
-pub(super) fn top_feature_idx(perspective: Color, side: Color, pt: PieceType, sq: Square) -> usize {
+#[inline]
+pub fn top_feature_idx(perspective: Color, side: Color, pt: PieceType, sq: Square) -> usize {
     (usize::from(side != perspective) * PieceType::COUNT + pt.idx()) * Square::COUNT + sq.idx()
 }
 
-pub(super) fn stack_feature_idx(perspective: Color, top: Piece, side: Color, depth: u8, sq: Square) -> usize {
+#[inline]
+pub fn stack_feature_idx(perspective: Color, top: Piece, side: Color, depth: u8, sq: Square) -> usize {
     debug_assert!(depth < 12);
     let top_idx = usize::from(top.color() != perspective) * PieceType::COUNT + top.piece_type().idx();
     ((top_idx * Color::COUNT + usize::from(side != perspective)) * Square::COUNT + sq.idx()) * 12 + depth as usize
 }
 
-pub(super) fn reserves_feature_idx(perspective: Color, side: Color, reserves: u8) -> usize {
+#[inline]
+pub fn reserves_feature_idx(perspective: Color, side: Color, reserves: u8) -> usize {
     usize::from(side != perspective) * 30 + (reserves as usize - 1)
 }
 

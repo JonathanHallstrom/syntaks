@@ -15,6 +15,7 @@ use inputs::*;
 use loader::{MixReader, TakReader};
 use rand::{Rng, rng};
 use syntaks::core::{Score, is_decisive};
+use syntaks::eval::nnue::packus_position;
 use syntaks::format::GameResult;
 use syntaks::position::Position;
 use syntaks::takmove::Move;
@@ -32,9 +33,6 @@ const FT_SHIFT_SCALE: f32 = Q0 as f32 / ((1 << FT_SHIFT) as f32);
 const I8_RANGE: f32 = i8::MAX as f32 / (Q1 as f32);
 const L1_RANGE: f32 = I8_RANGE * FT_SHIFT_SCALE * FT_SHIFT_SCALE;
 
-const PACKUS_LANE: usize = 8;
-const PACKUS_WIDTH: usize = 32;
-
 const SUPERBATCHES_PRETRAIN: usize = 5;
 const SUPERBATCHES_2KOMI: usize = 250;
 const SUPERBATCHES_COMBINED: usize = 150;
@@ -46,13 +44,6 @@ const SHUFFLE_BUFFER: usize = 8192;
 fn filter(_pos: &Position, _mv: Move, score: Score, _result: GameResult) -> bool {
     let mut rng = rng();
     !is_decisive(score) && rng.random_bool(0.5)
-}
-
-fn packus_position(neuron: usize) -> usize {
-    let chunk = neuron % (2 * PACKUS_WIDTH);
-    let lane = chunk / (2 * PACKUS_LANE);
-    let half = chunk % (2 * PACKUS_LANE) / PACKUS_LANE;
-    neuron - chunk + half * PACKUS_WIDTH + lane * PACKUS_LANE + chunk % PACKUS_LANE
 }
 
 fn packus_layout(weights: Vec<f32>) -> Vec<f32> {

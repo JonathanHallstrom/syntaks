@@ -21,8 +21,11 @@
  * SOFTWARE.
  */
 use crate::core::Color;
+use crate::eval::nnue_state::NnueState;
+use crate::eval::policy::{MAX_LEGAL, softmax};
 use crate::eval::static_eval_once;
 use crate::limit::{Limits, MAX_MOVE_OVERHEAD_MS};
+use crate::movegen::generate_moves;
 use crate::perft::{perft, split_perft};
 use crate::position::*;
 use crate::search::{MAX_THREADS, Searcher};
@@ -164,6 +167,7 @@ impl TeiHandler {
                 "wait" => self.handle_wait(),
                 "d" => self.handle_d(),
                 "eval" => self.handle_eval(),
+                "policy" => self.handle_policy(),
                 "perft" => self.handle_perft(args),
                 "splitperft" => self.handle_splitperft(args),
                 "bench" => self.handle_bench(args.first().copied()),
@@ -695,6 +699,24 @@ impl TeiHandler {
             static_eval,
             wdl::normalise_score(static_eval)
         );
+    }
+
+    fn handle_policy(&self) {
+        let mut nnue = NnueState::new();
+        nnue.reset(&self.pos);
+        let policy = nnue.policy(&self.pos);
+        let mut moves = vec![];
+        generate_moves(&mut moves, &self.pos);
+        let mut logits = [0; MAX_LEGAL];
+        let logits = &mut logits[..moves.len()];
+        for (&mv, logit) in moves.iter().zip(logits.iter_mut()) {
+            *logit = policy.logit(mv);
+        }
+        let mut scores: Vec<_> = softmax(&moves, logits).collect();
+        scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+        for (mv, score) in scores {
+            println!("{mv} {score:.8}");
+        }
     }
 
     fn handle_bench(&mut self, depth: Option<&str>) {

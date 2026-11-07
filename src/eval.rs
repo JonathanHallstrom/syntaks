@@ -25,11 +25,15 @@ mod accumulator;
 mod forward;
 pub mod nnue;
 pub mod nnue_state;
+pub mod policy;
 
 use crate::core::{SCORE_WIN, Score};
 use crate::eval::nnue::*;
 use crate::eval::nnue_state::NnueState;
 use crate::position::Position;
+
+#[repr(C, align(64))]
+struct Align64<T>(T);
 
 #[must_use]
 fn adjust_static(eval: i32) -> Score {

@@ -21,23 +21,11 @@
  * SOFTWARE.
  */
 
+use super::Align64;
 use super::simd::*;
 use crate::eval::accumulator::Accumulator;
 use crate::eval::nnue::*;
 use crate::position::Position;
-
-#[repr(C, align(64))]
-struct Align64<T>(T);
-
-const PACKUS_LANE: usize = 8;
-const PACKUS_WIDTH: usize = 32;
-
-const fn packus_position(neuron: usize) -> usize {
-    let chunk = neuron % (2 * PACKUS_WIDTH);
-    let lane = chunk / (2 * PACKUS_LANE);
-    let half = chunk % (2 * PACKUS_LANE) / PACKUS_LANE;
-    neuron - chunk + half * PACKUS_WIDTH + lane * PACKUS_LANE + chunk % PACKUS_LANE
-}
 
 const EXPLICIT_MULHI_SHIFT_UP: i32 = 7;
 const IMPLIED_MULHI_SHIFT_DOWN: i32 = 16;
@@ -47,42 +35,44 @@ const SHIFT: i32 = Q0_BITS * 2 + MULHI_SHIFT + Q1_BITS - Q_BITS;
 
 const L2_UNROLL: usize = 8 / (L2_SIZE / CHUNK_SIZE_I32);
 
-#[must_use]
-pub(super) fn forward(acc: &Accumulator, pos: &Position) -> i32 {
-    let output_bucket = which_output_bucket(pos);
+#[inline(always)]
+pub(super) fn activate(acc: &Accumulator, pos: &Position, activated_ft: &mut Align64<[u8; L1_SIZE]>) {
+    let lo = zero_i16();
+    let hi = set1_i16(Q0 as i16);
 
-    let mut activated_ft = Align64([0; L1_SIZE]);
+    for (values, out) in [pos.stm(), pos.stm().flip()]
+        .iter()
+        .map(|&color| &acc.values[color])
+        .zip(activated_ft.0.as_chunks_mut::<L1_PAIR_COUNT>().0)
     {
-        let lo = zero_i16();
-        let hi = set1_i16(Q0 as i16);
+        let values = values.as_ptr();
+        let out = out.as_mut_ptr();
 
-        for (values, out) in [pos.stm(), pos.stm().flip()]
-            .iter()
-            .map(|&color| &acc.values[color])
-            .zip(activated_ft.0.as_chunks_mut::<L1_PAIR_COUNT>().0)
-        {
-            let values = values.as_ptr();
-            let out = out.as_mut_ptr();
+        let activate = |offset: usize| {
+            let a = unsafe { load_i16(values.add(offset)) };
+            let b = unsafe { load_i16(values.add(offset + L1_PAIR_COUNT)) };
 
-            let activate = |offset: usize| {
-                let a = unsafe { load_i16(values.add(offset)) };
-                let b = unsafe { load_i16(values.add(offset + L1_PAIR_COUNT)) };
+            let a = min_i16(max_i16(a, lo), hi);
+            let b = min_i16(b, hi);
 
-                let a = min_i16(max_i16(a, lo), hi);
-                let b = min_i16(b, hi);
+            mulhi_shift_i16::<EXPLICIT_MULHI_SHIFT_UP>(a, b)
+        };
 
-                mulhi_shift_i16::<EXPLICIT_MULHI_SHIFT_UP>(a, b)
-            };
-
-            for i in (0..L1_PAIR_COUNT).step_by(2 * CHUNK_SIZE_I16) {
-                let offset_1 = packus_position(i);
-                let offset_2 = packus_position(i + PACKUS_LANE);
-                let p = packus_i16(activate(offset_1), activate(offset_2));
-                unsafe { store_u8(out.add(i), p) };
-            }
+        for i in (0..L1_PAIR_COUNT).step_by(2 * CHUNK_SIZE_I16) {
+            let offset_1 = packus_position(i);
+            let offset_2 = packus_position(i + PACKUS_LANE);
+            let p = packus_i16(activate(offset_1), activate(offset_2));
+            unsafe { store_u8(out.add(i), p) };
         }
     }
     debug_assert!(activated_ft.0.iter().all(|&e| e <= i8::MAX as u8));
+}
+
+#[must_use]
+pub(super) fn forward(acc: &Accumulator, pos: &Position) -> i32 {
+    let output_bucket = which_output_bucket(pos);
+    let mut activated_ft = Align64([0; L1_SIZE]);
+    activate(acc, pos, &mut activated_ft);
 
     let mut l1_intermediate = [[zero_i32(); L2_SIZE / CHUNK_SIZE_I32]; L2_UNROLL];
     {

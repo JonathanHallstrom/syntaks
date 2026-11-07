@@ -6,7 +6,7 @@ pub mod core;
 mod correction;
 #[cfg(feature = "datagen")]
 pub mod datagen;
-mod eval;
+pub mod eval;
 pub mod format;
 mod history;
 mod hits;

@@ -2,16 +2,20 @@ use bullet_lib::game::inputs::SparseInputType;
 use bullet_lib::game::outputs::OutputBuckets;
 use bullet_lib::value::loader::{GameResult as LoaderResult, LoadableDataType};
 use std::ops::Deref;
-use syntaks::core::{Color, PieceType, Square, normalizer};
+use syntaks::core::{Color, Square, normalizer};
+use syntaks::eval::nnue::{
+    RESERVES_INPUT_SIZE, STACK_INPUT_SIZE, TOP_INPUT_SIZE, reserves_feature_idx, stack_feature_idx, top_feature_idx,
+};
 use syntaks::format::PackedTakBoard;
 use syntaks::position::Position;
+use syntaks::takmove::Move;
 
 pub const RESERVE_BUCKETS: usize = 8;
 pub const KOMI_BUCKETS: usize = (Position::MAX_HALF_KOMI - Position::MIN_HALF_KOMI) as usize + 1;
 pub const OUTPUT_BUCKETS: usize = KOMI_BUCKETS * RESERVE_BUCKETS;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub struct LoadedTakBoard(pub PackedTakBoard, pub i8);
+pub struct LoadedTakBoard(pub PackedTakBoard, pub i8, pub Move);
 
 impl Deref for LoadedTakBoard {
     type Target = PackedTakBoard;
@@ -65,14 +69,52 @@ impl OutputBuckets<LoadedTakBoard> for KomiReserveBuckets {
 pub struct TakTopRelativeStacks;
 
 impl TakTopRelativeStacks {
-    const TOPS_COUNT: usize = Color::COUNT * PieceType::COUNT * Square::COUNT;
-    const STACKS_COUNT: usize = 12 * Color::COUNT * PieceType::COUNT * Square::COUNT * Color::COUNT;
-    const RESERVES_COUNT: usize = 30 * Color::COUNT;
+    pub const NUM_INPUTS: usize = TOP_INPUT_SIZE + STACK_INPUT_SIZE + RESERVES_INPUT_SIZE;
 
-    const STACKS_OFFSET: usize = Self::TOPS_COUNT;
-    const RESERVES_OFFSET: usize = Self::STACKS_OFFSET + Self::STACKS_COUNT;
+    pub fn map_position<F: FnMut(usize, usize)>(&self, pos: &Position, mut f: F) {
+        let stm = pos.stm();
+        let ntm = stm.flip();
+        let transforms = [Color::White, Color::Black].map(|perspective| normalizer(pos.cap_sq(perspective)));
+        let map_sq = |perspective: Color, sq: Square| sq.transform(transforms[perspective]);
 
-    pub const NUM_INPUTS: usize = Self::TOPS_COUNT + Self::STACKS_COUNT + Self::RESERVES_COUNT;
+        for sq in pos.occ() {
+            let stm_sq = map_sq(stm, sq);
+            let ntm_sq = map_sq(ntm, sq);
+            let top = pos.top(sq).unwrap();
+            f(
+                top_feature_idx(stm, top.color(), top.piece_type(), stm_sq),
+                top_feature_idx(ntm, top.color(), top.piece_type(), ntm_sq),
+            );
+
+            let height = pos.height(sq);
+            if height == 1 {
+                continue;
+            }
+
+            let mut colors = pos.colors(sq) >> 1;
+            let count = height.min(13) - 1;
+            for depth in 0..count {
+                let color = Color::from_raw((colors & 1) as u8).unwrap();
+                colors >>= 1;
+                f(
+                    TOP_INPUT_SIZE + stack_feature_idx(stm, top, color, depth, stm_sq),
+                    TOP_INPUT_SIZE + stack_feature_idx(ntm, top, color, depth, ntm_sq),
+                );
+            }
+        }
+
+        for color in [Color::White, Color::Black] {
+            let reserves = pos.flats_in_hand(color);
+            if reserves == 0 {
+                continue;
+            }
+            assert!(reserves < 30);
+            f(
+                TOP_INPUT_SIZE + STACK_INPUT_SIZE + reserves_feature_idx(stm, color, reserves),
+                TOP_INPUT_SIZE + STACK_INPUT_SIZE + reserves_feature_idx(ntm, color, reserves),
+            );
+        }
+    }
 }
 
 impl SparseInputType for TakTopRelativeStacks {
@@ -86,71 +128,8 @@ impl SparseInputType for TakTopRelativeStacks {
         64
     }
 
-    fn map_features<F: FnMut(usize, usize)>(&self, pos: &LoadedTakBoard, mut f: F) {
-        let pos = pos.decode_position().unwrap();
-        let stm_flip = pos.stm().idx();
-
-        let transforms = [Color::White, Color::Black].map(|perspective| normalizer(pos.cap_sq(perspective)));
-        let map_sq = |perspective: Color, sq: Square| sq.transform(transforms[perspective]);
-
-        for sq in pos.occ() {
-            let stm_sq = map_sq(pos.stm(), sq).idx();
-            let nstm_sq = map_sq(pos.stm().flip(), sq).idx();
-
-            let top_pt = pos.top_pt(sq).unwrap().idx();
-            let top_color = pos.top_color(sq).unwrap().idx();
-
-            let top_stm = ((top_color ^ stm_flip) * PieceType::COUNT + top_pt) * Square::COUNT + stm_sq;
-            let top_nstm = ((top_color ^ stm_flip ^ 1) * PieceType::COUNT + top_pt) * Square::COUNT + nstm_sq;
-            f(top_stm, top_nstm);
-
-            let height = pos.height(sq) as usize;
-
-            if height == 1 {
-                continue;
-            }
-
-            let mut colors = pos.colors(sq) >> 1;
-            let count = height.min(13) - 1;
-
-            for depth in 0..count {
-                let color = (colors & 0b1) as usize;
-
-                colors >>= 1;
-
-                let stm = Self::STACKS_OFFSET
-                    + ((((top_color ^ stm_flip) * PieceType::COUNT + top_pt) * Color::COUNT + (color ^ stm_flip))
-                        * Square::COUNT
-                        + stm_sq)
-                        * 12
-                    + depth;
-                let nstm = Self::STACKS_OFFSET
-                    + ((((top_color ^ stm_flip ^ 1) * PieceType::COUNT + top_pt) * Color::COUNT
-                        + (color ^ stm_flip ^ 1))
-                        * Square::COUNT
-                        + nstm_sq)
-                        * 12
-                    + depth;
-                f(stm, nstm);
-            }
-        }
-
-        for color in [Color::White, Color::Black] {
-            let reserves = pos.flats_in_hand(color);
-
-            if reserves == 0 {
-                continue;
-            }
-
-            assert!(reserves < 30);
-
-            let color_idx = color.idx() ^ stm_flip;
-
-            let stm = Self::RESERVES_OFFSET + color_idx * 30 + reserves as usize - 1;
-            let nstm = Self::RESERVES_OFFSET + (color_idx ^ 1) * 30 + reserves as usize - 1;
-
-            f(stm, nstm);
-        }
+    fn map_features<F: FnMut(usize, usize)>(&self, pos: &LoadedTakBoard, f: F) {
+        self.map_position(&pos.decode_position().unwrap(), f);
     }
 
     fn shorthand(&self) -> String {

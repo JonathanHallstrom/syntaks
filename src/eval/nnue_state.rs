@@ -25,6 +25,7 @@ use crate::core::Color;
 use crate::eval::accumulator::Accumulator;
 use crate::eval::forward::forward;
 use crate::eval::nnue::*;
+use crate::eval::policy::Policy;
 use crate::position::Position;
 use crate::search::MAX_DEPTH;
 
@@ -67,6 +68,11 @@ impl NnueState {
     pub fn evaluate(&mut self, pos: &Position) -> i32 {
         self.ensure_up_to_date(pos);
         forward(&self.acc_stacc[self.top_idx], pos)
+    }
+
+    pub fn policy(&mut self, pos: &Position) -> Policy {
+        self.ensure_up_to_date(pos);
+        Policy::new(&self.acc_stacc[self.top_idx], pos)
     }
 
     fn ensure_up_to_date(&mut self, pos: &Position) {

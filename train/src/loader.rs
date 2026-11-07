@@ -199,6 +199,7 @@ fn splat(game: &Game, hk: i8, out: &mut Vec<LoadedTakBoard>, filter: &TakFilter)
             out.push(LoadedTakBoard(
                 PackedTakBoard::encode_position_from_game(&pos, eval as Score, game.result),
                 hk,
+                mv,
             ));
         }
         pos = pos.apply_move(mv);

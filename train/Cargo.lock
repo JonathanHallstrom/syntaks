@@ -435,6 +435,8 @@ dependencies = [
 name = "taktrain"
 version = "0.1.0"
 dependencies = [
+ "bullet-compiler",
+ "bullet-gpu",
  "bullet-trainer",
  "bullet_lib",
  "rand 0.9.5",
