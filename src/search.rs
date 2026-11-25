@@ -935,6 +935,10 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
                     reduction = (reduction + 1).min(3);
                     beta = (beta + delta).min(SCORE_INF);
                 }
+
+                if score.abs() > 2000 {
+                    reduction = 0;
+                }
             }
 
             thread.sort_searched_root_moves();
