@@ -137,8 +137,8 @@ impl DynamicLmrTable {
     }
 }
 
-tunable!(LMR_BASE: i32 = 0; range(0, 4096));
-tunable!(LMR_SCALE: i32 = 350; range(0, 1024));
+tunable!(LMR_BASE: i32 = 15; range(0, 4096));
+tunable!(LMR_SCALE: i32 = 321; range(0, 1024));
 
 #[cfg(not(feature = "tune"))]
 static LMR_REDUCTIONS: LmrTable = lmr_table(LMR_BASE, LMR_SCALE);
@@ -375,19 +375,19 @@ fn search<NT: NodeType>(
             depth += 1;
         }
 
-        tunable!(HINDSIGHT_REDUCTION_MARGIN: i32 = 200; range(20, 400));
+        tunable!(HINDSIGHT_REDUCTION_MARGIN: i32 = 214; range(20, 400));
 
         if depth >= 2 && parent_reduction >= 2 && static_eval + parent_static_eval >= HINDSIGHT_REDUCTION_MARGIN {
             depth -= 1;
         }
 
         tunable!(RFP_DEPTH_SCALE: i32 = 92; range(0, 256));
-        tunable!(RFP_BASE: i32 = 154; range(0, 512));
-        tunable!(RFP_CUTNODE: i32 = 101; range(0, 256));
-        tunable!(RFP_IMPROVING: i32 = 70; range(0, 512));
-        tunable!(RFP_OPP_WORSENING: i32 = 32; range(0, 128));
+        tunable!(RFP_BASE: i32 = 155; range(0, 512));
+        tunable!(RFP_CUTNODE: i32 = 109; range(0, 256));
+        tunable!(RFP_IMPROVING: i32 = 64; range(0, 512));
+        tunable!(RFP_OPP_WORSENING: i32 = 30; range(0, 128));
 
-        tunable!(RFP_FAILFIRM_T: i32 = 512; range(0, 1024));
+        tunable!(RFP_FAILFIRM_T: i32 = 539; range(0, 1024));
 
         // reverse futility pruning (rfp)
         let rfp_margin = (RFP_DEPTH_SCALE * depth + RFP_BASE
@@ -403,8 +403,8 @@ fn search<NT: NodeType>(
             };
         }
 
-        tunable!(NMP_BASE_R: i32 = 5249; range(0, 8192));
-        tunable!(NMP_DEPTH_SCALE: i32 = 452; range(0, 1024));
+        tunable!(NMP_BASE_R: i32 = 5426; range(0, 8192));
+        tunable!(NMP_DEPTH_SCALE: i32 = 502; range(0, 1024));
 
         // nullmove pruning (nmp)
         if expected_cutnode && depth >= 4 && static_eval >= beta && thread.stack[ply - 1].mv.is_some() {
@@ -466,13 +466,13 @@ fn search<NT: NodeType>(
 
         #[allow(clippy::collapsible_if)]
         if !NT::ROOT_NODE && !is_loss(best_score) && (!NT::PV_NODE || !cfg!(feature = "datagen")) {
-            tunable!(LMP_LOSING_MARGIN: i64 = 146; range(0, 512));
-            tunable!(LMP_BASE: i64 = 1629; range(0, 2048));
-            tunable!(LMP_DEPTH_SCALE: i64 = 310; range(0, 1024));
+            tunable!(LMP_LOSING_MARGIN: i64 = 144; range(0, 512));
+            tunable!(LMP_BASE: i64 = 1605; range(0, 2048));
+            tunable!(LMP_DEPTH_SCALE: i64 = 322; range(0, 1024));
 
-            tunable!(LMP_IMPROVING: i64 = 1024; range(0, 2048));
-            tunable!(LMP_NOT_LOSING: i64 = 1024; range(0, 2048));
-            tunable!(LMP_PV_NODE: i64 = 1024; range(0, 2048));
+            tunable!(LMP_IMPROVING: i64 = 975; range(0, 2048));
+            tunable!(LMP_NOT_LOSING: i64 = 1005; range(0, 2048));
+            tunable!(LMP_PV_NODE: i64 = 1103; range(0, 2048));
 
             if depth <= 8 {
                 let losing = static_eval as i64 + LMP_LOSING_MARGIN <= alpha as i64;
@@ -505,19 +505,19 @@ fn search<NT: NodeType>(
 
         let mut extension = 0;
 
-        tunable!(S_BETA_BASE_MARGIN: i32 = 1391; range(0, 4096));
-        tunable!(S_BETA_PREV_PV_MARGIN: i32 = 0; range(0, 2048));
+        tunable!(S_BETA_BASE_MARGIN: i32 = 1457; range(0, 4096));
+        tunable!(S_BETA_PREV_PV_MARGIN: i32 = 3; range(0, 2048));
 
-        tunable!(SE_DEXT_BASE_MARGIN: i32 = 26; range(0, 128));
-        tunable!(SE_DEXT_PV_MARGIN: i32 = 256; range(0, 512));
+        tunable!(SE_DEXT_BASE_MARGIN: i32 = 24; range(0, 128));
+        tunable!(SE_DEXT_PV_MARGIN: i32 = 248; range(0, 512));
 
-        tunable!(SE_TEXT_BASE_MARGIN: i32 = 137; range(0, 256));
-        tunable!(SE_TEXT_PV_MARGIN: i32 = 400; range(0, 1024));
+        tunable!(SE_TEXT_BASE_MARGIN: i32 = 143; range(0, 256));
+        tunable!(SE_TEXT_PV_MARGIN: i32 = 389; range(0, 1024));
 
-        tunable!(MULTICUT_FAILFIRM_T: i32 = 0; range(0, 1024));
+        tunable!(MULTICUT_FAILFIRM_T: i32 = 6; range(0, 1024));
 
-        tunable!(LDSE_MARGIN: i32 = 26; range(1, 64));
-        tunable!(LDSE_DOUBLE_MARGIN: i32 = 40; range(20, 120));
+        tunable!(LDSE_MARGIN: i32 = 27; range(1, 64));
+        tunable!(LDSE_DOUBLE_MARGIN: i32 = 39; range(20, 120));
 
         if !NT::ROOT_NODE && Some(mv) == tt_move && excluded.is_none() {
             #[allow(clippy::if_same_then_else)]
@@ -614,11 +614,11 @@ fn search<NT: NodeType>(
 
             if depth >= 2 && move_count >= 2 + usize::from(NT::ROOT_NODE) {
                 let lmr_history = {
-                    tunable!(LMR_MAIN_HIST_ONLY_WEIGHT: i32 = 1024; range(0, 2048));
-                    tunable!(LMR_MAIN_HIST_WEIGHT: i32 = 512; range(0, 2048));
-                    tunable!(LMR_CAP_HIST_WEIGHT: i32 = 512; range(0, 2048));
-                    tunable!(LMR_INFL_HIST_WEIGHT: i32 = 1024; range(0, 2048));
-                    tunable!(LMR_CONT1_HIST_WEIGHT: i32 = 1024; range(0, 2048));
+                    tunable!(LMR_MAIN_HIST_ONLY_WEIGHT: i32 = 1084; range(0, 2048));
+                    tunable!(LMR_MAIN_HIST_WEIGHT: i32 = 510; range(0, 2048));
+                    tunable!(LMR_CAP_HIST_WEIGHT: i32 = 546; range(0, 2048));
+                    tunable!(LMR_INFL_HIST_WEIGHT: i32 = 1051; range(0, 2048));
+                    tunable!(LMR_CONT1_HIST_WEIGHT: i32 = 978; range(0, 2048));
 
                     let mut hist_score = 0;
 
@@ -638,14 +638,14 @@ fn search<NT: NodeType>(
 
                 let mut r = LMR_REDUCTIONS.get(depth, move_count);
 
-                tunable!(PV_NODE_LMR: i32 = 1263; range(0, 4096));
-                tunable!(TTPV_LMR: i32 = 0; range(0, 2048));
-                tunable!(CUTNODE_LMR: i32 = 2289; range(0, 4096));
-                tunable!(IMPROVING_LMR: i32 = 264; range(0, 4096));
-                tunable!(HIST_LMR: i32 = 1233; range(0, 4096));
-                tunable!(CORR_LMR: i32 = 439; range(0, 2048));
-                tunable!(THREAT_LMR: i32 = 1001; range(0, 4096));
-                tunable!(SPREAD_GAIN_LMR: i32 = -603; range(-2048, 2048));
+                tunable!(PV_NODE_LMR: i32 = 1385; range(0, 4096));
+                tunable!(TTPV_LMR: i32 = 6; range(0, 2048));
+                tunable!(CUTNODE_LMR: i32 = 2396; range(0, 4096));
+                tunable!(IMPROVING_LMR: i32 = 369; range(0, 4096));
+                tunable!(HIST_LMR: i32 = 1316; range(0, 4096));
+                tunable!(CORR_LMR: i32 = 476; range(0, 2048));
+                tunable!(THREAT_LMR: i32 = 942; range(0, 4096));
+                tunable!(SPREAD_GAIN_LMR: i32 = -713; range(-2048, 2048));
 
                 r += PV_NODE_LMR * i32::from(!NT::PV_NODE);
                 r -= TTPV_LMR * i32::from(ttpv);
@@ -665,8 +665,8 @@ fn search<NT: NodeType>(
                     r += (1 - gain).clamp(0, 3) * SPREAD_GAIN_LMR;
                 }
 
-                tunable!(LMR_EXT_THRESHOLD: i32 = -1024; range(-4096, 0));
-                tunable!(LMR_PV_EXT_THRESHOLD: i32 = 1; range(-2048, 2048));
+                tunable!(LMR_EXT_THRESHOLD: i32 = -996; range(-4096, 0));
+                tunable!(LMR_PV_EXT_THRESHOLD: i32 = 103; range(-2048, 2048));
 
                 let reduced = (new_depth - r / 1024)
                     .max(1)
@@ -678,8 +678,8 @@ fn search<NT: NodeType>(
                 thread.stack[ply].reduction = 0;
 
                 if score > alpha && reduced < new_depth {
-                    tunable!(DODEEPER_BASE: i32 = 34365; range(0, 131072));
-                    tunable!(DODEEPER_SCALE: i32 = 2154; range(0, 8192));
+                    tunable!(DODEEPER_BASE: i32 = 35683; range(0, 131072));
+                    tunable!(DODEEPER_SCALE: i32 = 1889; range(0, 8192));
 
                     let do_deeper = score > best_score + (DODEEPER_BASE + DODEEPER_SCALE * new_depth) / 1024;
                     let new_depth = new_depth + i32::from(do_deeper);
@@ -694,9 +694,9 @@ fn search<NT: NodeType>(
                         !expected_cutnode,
                     );
 
-                    tunable!(LMR_HIST_BONUS_SCALE: i32 = 457; range(0, 1024));
-                    tunable!(LMR_HIST_BONUS_OFFSET: i32 = 380; range(0, 1024));
-                    tunable!(LMR_HIST_BONUS_MAX: i32 = 3760; range(0, 4096));
+                    tunable!(LMR_HIST_BONUS_SCALE: i32 = 469; range(0, 1024));
+                    tunable!(LMR_HIST_BONUS_OFFSET: i32 = 362; range(0, 1024));
+                    tunable!(LMR_HIST_BONUS_MAX: i32 = 3782; range(0, 4096));
 
                     let bonus =
                         (LMR_HIST_BONUS_SCALE * new_depth - LMR_HIST_BONUS_OFFSET).clamp(0, LMR_HIST_BONUS_MAX.val());
@@ -792,12 +792,12 @@ fn search<NT: NodeType>(
     debug_assert!(move_count > 0);
 
     if let Some(best_move) = best_move {
-        tunable!(HIST_BONUS_SCALE: i32 = 482; range(0, 1024));
-        tunable!(HIST_BONUS_OFFSET: i32 = 479; range(0, 1024));
-        tunable!(HIST_BONUS_MAX: i32 = 3655; range(0, 4096));
-        tunable!(HIST_PENALTY_SCALE: i32 = 482; range(0, 1024));
-        tunable!(HIST_PENALTY_OFFSET: i32 = 512; range(0, 1024));
-        tunable!(HIST_PENALTY_MAX: i32 = 3092; range(0, 4096));
+        tunable!(HIST_BONUS_SCALE: i32 = 485; range(0, 1024));
+        tunable!(HIST_BONUS_OFFSET: i32 = 502; range(0, 1024));
+        tunable!(HIST_BONUS_MAX: i32 = 3527; range(0, 4096));
+        tunable!(HIST_PENALTY_SCALE: i32 = 467; range(0, 1024));
+        tunable!(HIST_PENALTY_OFFSET: i32 = 475; range(0, 1024));
+        tunable!(HIST_PENALTY_MAX: i32 = 3091; range(0, 4096));
 
         let bonus = (HIST_BONUS_SCALE * depth - HIST_BONUS_OFFSET).clamp(0, HIST_BONUS_MAX.val());
         let penalty = (HIST_PENALTY_SCALE * depth - HIST_PENALTY_OFFSET).clamp(0, HIST_PENALTY_MAX.val());
@@ -946,8 +946,8 @@ fn run_search(shared: Arc<SharedContext>, ctx: &SearchContext, thread: &mut Thre
         while thread.pv_idx < ctx.multipv {
             thread.reset_seldepth();
 
-            tunable!(ASP_DELTA: i32 = 23; range(1, 64));
-            tunable!(ASP_WIDEN: i32 = 1280; range(1024, 4096));
+            tunable!(ASP_DELTA: i32 = 24; range(1, 64));
+            tunable!(ASP_WIDEN: i32 = 1271; range(1024, 4096));
 
             let mut delta = ASP_DELTA.val();
 

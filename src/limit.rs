@@ -38,26 +38,26 @@ const TIME_CHECK_INTERVAL: usize = 4096;
 
 const MAX_STONES_IN_HAND: u8 = 62;
 
-tunable!(BASE_TIME_SCALE: i32 = 1024; range(1, 4096));
-tunable!(INC_SCALE: i32 = 1024; range(1, 4096));
+tunable!(BASE_TIME_SCALE: i32 = 1158; range(1, 4096));
+tunable!(INC_SCALE: i32 = 1109; range(1, 4096));
 
-tunable!(STONE_COMPLEXITY_SCALE: i32 = 5120; range(1, 10240));
-tunable!(STONE_COMPLEXITY_BASE: i32 = 17920; range(1, 32768));
+tunable!(STONE_COMPLEXITY_SCALE: i32 = 5197; range(1, 10240));
+tunable!(STONE_COMPLEXITY_BASE: i32 = 17798; range(1, 32768));
 
-tunable!(OPT_TIME_SCALE: i32 = 614; range(256, 1536));
+tunable!(OPT_TIME_SCALE: i32 = 637; range(256, 1536));
 
-tunable!(BM_STABILITY_MIN: i32 = 819; range(1, 2048));
-tunable!(BM_STABILITY_MAX: i32 = 2355; range(1024, 4096));
-tunable!(BM_STABILITY_SCALE: i32 = 8806; range(1024, 16384));
-tunable!(BM_STABILITY_OFFSET: i32 = 922; range(0, 4096));
-tunable!(BM_STABILITY_POWER: i32 = -2662; range(-4096, -1024));
+tunable!(BM_STABILITY_MIN: i32 = 848; range(1, 2048));
+tunable!(BM_STABILITY_MAX: i32 = 2247; range(1024, 4096));
+tunable!(BM_STABILITY_SCALE: i32 = 9023; range(1024, 16384));
+tunable!(BM_STABILITY_OFFSET: i32 = 724; range(0, 4096));
+tunable!(BM_STABILITY_POWER: i32 = -2624; range(-4096, -1024));
 
-tunable!(SCORE_DROP_DIVISOR: i32 = 86016; range(32768, 131072));
-tunable!(SCORE_DROP_MAX: i32 = 1741; range(640, 3072));
+tunable!(SCORE_DROP_DIVISOR: i32 = 88682; range(32768, 131072));
+tunable!(SCORE_DROP_MAX: i32 = 1804; range(640, 3072));
 
-tunable!(NODE_TM_BASE: i32 = 2560; range(1536, 3072));
-tunable!(NODE_TM_SCALE: i32 = 2560; range(1536, 4096));
-tunable!(NODE_TM_MIN: i32 = 512; range(1, 1024));
+tunable!(NODE_TM_BASE: i32 = 2591; range(1536, 3072));
+tunable!(NODE_TM_SCALE: i32 = 2466; range(1536, 4096));
+tunable!(NODE_TM_MIN: i32 = 514; range(1, 1024));
 
 #[derive(Clone, Debug, Default)]
 pub struct TmContext {

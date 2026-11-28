@@ -321,10 +321,10 @@ impl<'a> HistorySlice<'a> {
     }
 
     pub fn update(&self, mv: Move, bonus: i32) {
-        tunable!(MAIN_HIST_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CAP_HIST_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(INFL_HIST_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CONT1_HIST_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
+        tunable!(MAIN_HIST_UPDATE_WEIGHT: i32 = 1048; range(0, 2048));
+        tunable!(CAP_HIST_UPDATE_WEIGHT: i32 = 1057; range(0, 2048));
+        tunable!(INFL_HIST_UPDATE_WEIGHT: i32 = 988; range(0, 2048));
+        tunable!(CONT1_HIST_UPDATE_WEIGHT: i32 = 1076; range(0, 2048));
 
         let bonus = bonus.clamp(-History::MAX_BONUS, History::MAX_BONUS);
 

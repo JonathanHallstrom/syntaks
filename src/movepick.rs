@@ -35,10 +35,10 @@ use crate::stats;
 use crate::tunable;
 
 const SPREAD_ROAD_BONUS: i32 = 1 << 18;
-tunable!(SPREAD_FLAT_GAIN: i32 = 5627; range(0, 8192));
-tunable!(PLACEMENT_PENALTY: i32 = 78; range(-2048, 2048));
-tunable!(WALL_SMASH_BONUS: i32 = 4215; range(0, 8192));
-tunable!(KILLER_MOVE_BONUS: i32 = 16442; range(-32768, 32768));
+tunable!(SPREAD_FLAT_GAIN: i32 = 5462; range(0, 8192));
+tunable!(PLACEMENT_PENALTY: i32 = 247; range(-2048, 2048));
+tunable!(WALL_SMASH_BONUS: i32 = 4536; range(0, 8192));
+tunable!(KILLER_MOVE_BONUS: i32 = 16677; range(-32768, 32768));
 
 struct SpreadInfo {
     roads: Bitboard,
@@ -277,11 +277,11 @@ impl<'a> Movepicker<'a> {
         self.scores.clear();
         for &mv in self.moves.iter() {
             let hist_score = {
-                tunable!(MOVEPICK_MAIN_HIST_ONLY_WEIGHT: i32 = 1024; range(0, 2048));
-                tunable!(MOVEPICK_MAIN_HIST_WEIGHT: i32 = 512; range(0, 2048));
-                tunable!(MOVEPICK_CAP_HIST_WEIGHT: i32 = 512; range(0, 2048));
-                tunable!(MOVEPICK_INFL_HIST_WEIGHT: i32 = 1024; range(0, 2048));
-                tunable!(MOVEPICK_CONT1_HIST_WEIGHT: i32 = 1024; range(0, 2048));
+                tunable!(MOVEPICK_MAIN_HIST_ONLY_WEIGHT: i32 = 965; range(0, 2048));
+                tunable!(MOVEPICK_MAIN_HIST_WEIGHT: i32 = 509; range(0, 2048));
+                tunable!(MOVEPICK_CAP_HIST_WEIGHT: i32 = 514; range(0, 2048));
+                tunable!(MOVEPICK_INFL_HIST_WEIGHT: i32 = 1116; range(0, 2048));
+                tunable!(MOVEPICK_CONT1_HIST_WEIGHT: i32 = 1005; range(0, 2048));
 
                 let mut hist_score = 0;
 

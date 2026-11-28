@@ -168,13 +168,13 @@ pub struct CorrectionHistorySlice<'a> {
 
 impl<'a> CorrectionHistorySlice<'a> {
     pub fn get(&self) -> i32 {
-        tunable!(CORRHIST_BLOCKER_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_ROAD_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_TOP_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_RESERVE_WEIGHT: i32 = 1024; range(0, 2048));
+        tunable!(CORRHIST_BLOCKER_WEIGHT: i32 = 942; range(0, 2048));
+        tunable!(CORRHIST_ROAD_WEIGHT: i32 = 989; range(0, 2048));
+        tunable!(CORRHIST_TOP_WEIGHT: i32 = 1045; range(0, 2048));
+        tunable!(CORRHIST_RESERVE_WEIGHT: i32 = 1040; range(0, 2048));
 
-        tunable!(CORRHIST_CONT1_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_CONT2_WEIGHT: i32 = 1024; range(0, 2048));
+        tunable!(CORRHIST_CONT1_WEIGHT: i32 = 987; range(0, 2048));
+        tunable!(CORRHIST_CONT2_WEIGHT: i32 = 1042; range(0, 2048));
 
         let mut correction = 0;
 
@@ -190,13 +190,13 @@ impl<'a> CorrectionHistorySlice<'a> {
     }
 
     pub fn update(&self, depth: i32, search_score: Score, static_eval: Score) {
-        tunable!(CORRHIST_BLOCKER_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_ROAD_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_TOP_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_RESERVE_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
+        tunable!(CORRHIST_BLOCKER_UPDATE_WEIGHT: i32 = 1059; range(0, 2048));
+        tunable!(CORRHIST_ROAD_UPDATE_WEIGHT: i32 = 981; range(0, 2048));
+        tunable!(CORRHIST_TOP_UPDATE_WEIGHT: i32 = 984; range(0, 2048));
+        tunable!(CORRHIST_RESERVE_UPDATE_WEIGHT: i32 = 1116; range(0, 2048));
 
-        tunable!(CORRHIST_CONT1_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
-        tunable!(CORRHIST_CONT2_UPDATE_WEIGHT: i32 = 1024; range(0, 2048));
+        tunable!(CORRHIST_CONT1_UPDATE_WEIGHT: i32 = 1034; range(0, 2048));
+        tunable!(CORRHIST_CONT2_UPDATE_WEIGHT: i32 = 1032; range(0, 2048));
 
         let bonus = ((search_score - static_eval) * depth / 8)
             .clamp(-CorrectionHistory::MAX_BONUS, CorrectionHistory::MAX_BONUS);
